@@ -8,9 +8,12 @@ export {
 } from "./builder.js";
 
 export type {
-  GoalDagFileDocument,
   GoalDagSpec,
   GoalDagSpecNode,
-  GoalDagFileDefaults,
+  GoalDagFileDocument,
   GoalDagFileNode,
-} from "agent-goal-runtime";
+  GoalDagFileDefaults,
+  GoalDagConflictHints,
+  GoalDagNode,
+  GoalModelRoutingConfig,
+} from "./builder.js";
