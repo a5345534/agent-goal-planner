@@ -18,9 +18,11 @@ The runtime stays the source of truth for the DAG schema and validation.
 This package only does two things:
 
 1. Reads a spec (which the agent or a script produces).
-2. Hands it to `agent-goal-runtime`'s `buildGoalDagDocumentFromSpec()`,
-   which round-trips the spec through the runtime's parser and refuses to
-   write an invalid DAG file.
+2. Composes a draft DAG file from the spec and round-trips it through
+   `agent-goal-runtime`'s `parseGoalDagFileDocument()` — the runtime
+   parser is the single source of truth for id pattern, dependency
+   existence, self-dependency, cycle, and model-scenario referential
+   integrity. The planner refuses to write an invalid DAG.
 
 ## Install
 
@@ -109,8 +111,7 @@ The skill walks the agent through:
 ┌────────────────────────────────────────┐
 │  agent-goal-runtime                    │
 │  - parseGoalDagFileDocument (parser)   │
-│  - buildGoalDagDocumentFromSpec (new)  │
-│  - serializeGoalDagDocument (new)      │
+│  - GoalDagFileDocument / types         │
 └────────────────────────────────────────┘
                   ▲
                   │ uses
@@ -138,6 +139,8 @@ npm run check   # build + tests
 ```
 
 The package depends on `agent-goal-runtime` via a `file:` reference to a
-sibling checkout. Once `agent-goal-runtime` publishes a release that
-includes the `buildGoalDagDocumentFromSpec` API, switch the dependency
-to a real version range.
+sibling checkout. Once `agent-goal-runtime` publishes a release, switch
+the dependency to a real version range. The runtime version required is
+the one that exports `parseGoalDagFileDocument` plus the
+`GoalDagFileDocument` / `GoalDagFileNode` / `GoalDagFileDefaults` /
+`GoalDagConflictHints` / `GoalDagNode` / `GoalModelRoutingConfig` types.

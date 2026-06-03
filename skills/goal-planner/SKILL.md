@@ -83,8 +83,8 @@ extract milestones from this PRD?" reasoning is the agent's job.
      --spec <spec.json> --out <out.dag.json>
    ```
 
-   The CLI delegates to `agent-goal-runtime`'s
-   `buildGoalDagDocumentFromSpec()` and refuses to write an invalid DAG.
+   The CLI round-trips the spec through `agent-goal-runtime`'s
+   `parseGoalDagFileDocument()` and refuses to write an invalid DAG.
 
 5. **Show the user the resulting DAG** (objective + node ids + dependency
    graph) and the diff vs. the document's intent, then ask whether to start:
@@ -106,7 +106,7 @@ extract milestones from this PRD?" reasoning is the agent's job.
   declare `modelRouting.scenarios` first, or omit `modelScenario` on the
   node and let the runtime fall back to `defaultSubagentScenario` or the
   current session model.
-- **Always round-trip through the runtime builder** so cycle / missing-dep /
+- **Always round-trip through the runtime parser** so cycle / missing-dep /
   scenario-ref errors surface before the user sees the file.
 
 ## Failure modes
