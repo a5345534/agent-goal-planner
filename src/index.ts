@@ -7,6 +7,19 @@ export {
   serializeGoalDagDocument,
 } from "./builder.js";
 
+export {
+  parseModelCatalogContent,
+  parseModelCatalogDocument,
+} from "./model-catalog.js";
+
+export type {
+  ModelCatalog,
+  ModelCatalogModel,
+  ModelCatalogScenarioTemplate,
+  ModelCatalogSelectionPolicy,
+  ModelCatalogSource,
+} from "./model-catalog.js";
+
 export type {
   GoalDagSpec,
   GoalDagSpecNode,

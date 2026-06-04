@@ -9,11 +9,10 @@ This skill teaches the agent to convert a free-form development document into a
 [Goal DAG](../goal-dag-format.md) JSON file that `agent-goal-runtime` can execute
 via `/goal --dag <path>`.
 
-The skill is intentionally **prompt + reference heavy, code-light**: the only
-deterministic step is "turn a `GoalDagSpec` into a valid DAG file" and that step
-is delegated to the [`agent-goal-runtime` builder
-API](https://github.com/a5345534/agent-goal-runtime). All of the "how do I
-extract milestones from this PRD?" reasoning is the agent's job.
+The skill is intentionally **prompt + reference heavy, code-light**. The agent
+performs the creative steps: extracting milestones from the document and assigning
+models from the catalog. Deterministic code then turns the `GoalDagSpec` into a
+DAG file and round-trips it through `agent-goal-runtime`'s parser for validation.
 
 ## When to load this skill
 
@@ -43,13 +42,20 @@ extract milestones from this PRD?" reasoning is the agent's job.
 
 1. **Read the document** with `read`. Do not invent content; the document is
    the source of truth for the goal objective and node list.
-2. **Extract a `GoalDagSpec`**. Use this exact shape:
+2. **Read the model catalog** before assigning models. Prefer a project-local
+   `.goal/model-catalog.json` when present; otherwise use this package's
+   [`../../catalogs/pi-available-models.json`](../../catalogs/pi-available-models.json).
+   The catalog lists the Pi models available on Shawn's machine plus planner
+   guidance (`recommendedFor`, `avoidFor`, scenario templates, context, images,
+   reasoning, cost/speed tiers). Use only models from this catalog unless the
+   user explicitly supplies another model.
+3. **Extract a `GoalDagSpec`**. Use this exact shape:
 
    ```ts
    interface GoalDagSpec {
      version?: 1;
      objective: string;          // one-sentence summary of the overall goal
-     defaults?: { ... };         // copied to every node unless overridden
+     defaults?: { ... };         // copied to every node unless overridden; planner supports defaults.risk
      modelRouting?: { ... };     // see references/routing-scenarios.md
      nodes: Array<{
        id: string;               // kebab-case, ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$
@@ -67,16 +73,31 @@ extract milestones from this PRD?" reasoning is the agent's job.
    ```
 
    See [`references/dag-format.md`](references/dag-format.md) for the full
-   field reference and [`references/routing-scenarios.md`](references/routing-scenarios.md)
-   for model-routing examples.
+   field reference, [`references/routing-scenarios.md`](references/routing-scenarios.md)
+   for model-routing examples, and [`references/model-catalog.md`](references/model-catalog.md)
+   for the model assignment workflow.
 
-3. **Ask clarifying questions** when the document is ambiguous:
+4. **Assign models with LLM judgment using the catalog.** Produce and show a
+   table before writing the final spec:
+
+   | node | risk/scope summary | chosen scenario | model | reason |
+   | --- | --- | --- | --- | --- |
+
+   Then write `modelRouting.scenarios` and explicit per-node `modelScenario`
+   values into the spec. Prefer explicit per-node assignments over fuzzy rules;
+   use `modelRouting.rules` only when a rule is simpler and less ambiguous.
+   If all nodes would otherwise fall back to the current Pi session model,
+   warn the user and ask whether that is intended.
+
+5. **Ask clarifying questions** when the document is ambiguous:
    - Are nodes A and B parallel, or does B depend on A?
    - Which modules / files does each node touch? (drives `conflicts`)
    - Is there a verification command per node? (drives `validators`)
    - Should a node use a different model? (drives `modelScenario`)
+   - Is a cheaper/faster model acceptable for low-risk docs/spec-only nodes?
+   - Does a high-risk or final-audit node require a stronger/long-context model?
 
-4. **Write the spec to a temp JSON file** and run:
+6. **Write the spec to a temp JSON file** and run:
 
    ```bash
    npx --package=agent-goal-planner agent-goal-planner build-dag \
@@ -86,8 +107,9 @@ extract milestones from this PRD?" reasoning is the agent's job.
    The CLI round-trips the spec through `agent-goal-runtime`'s
    `parseGoalDagFileDocument()` and refuses to write an invalid DAG.
 
-5. **Show the user the resulting DAG** (objective + node ids + dependency
-   graph) and the diff vs. the document's intent, then ask whether to start:
+7. **Show the user the resulting DAG** (objective + node ids + dependency
+   graph + model assignment table) and the diff vs. the document's intent,
+   then ask whether to start:
 
    ```text
    /goal --dag <out.dag.json>
@@ -102,10 +124,10 @@ extract milestones from this PRD?" reasoning is the agent's job.
 - **Do not invent `validators` or `outputs` the document does not support.**
   The runtime will run validators as plain shell commands; only include them
   when the document specifies the check. Otherwise omit the field.
-- **Do not include model scenarios the runtime does not know.** Either
-  declare `modelRouting.scenarios` first, or omit `modelScenario` on the
-  node and let the runtime fall back to `defaultSubagentScenario` or the
-  current session model.
+- **Do not use models outside the active model catalog.** Declare every chosen
+  model in `modelRouting.scenarios`, then assign each node with `modelScenario`.
+  Omit `modelScenario` only after warning the user that runtime fallback will
+  use `defaultSubagentScenario` or the current Pi session model.
 - **Always round-trip through the runtime parser** so cycle / missing-dep /
   scenario-ref errors surface before the user sees the file.
 

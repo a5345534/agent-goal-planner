@@ -11,8 +11,8 @@ model-scenario referential integrity, etc.). This package adds a thin
 - A programmatic `GoalDagSpec` builder API.
 - A small CLI: `agent-goal-planner build-dag --spec <in> --out <out>`.
 - A Pi skill (`/skill:goal-planner`) that teaches an agent to extract a
-  spec from a PRD, design doc, or OpenSpec change and emit a valid DAG
-  file.
+  spec from a PRD, design doc, or OpenSpec change, assign models from
+  a catalog, and emit a valid DAG file.
 
 The runtime stays the source of truth for the DAG schema and validation.
 This package only does two things:
@@ -108,11 +108,31 @@ tarball. Once installed, the agent can run:
 The skill walks the agent through:
 
 1. Reading the document.
-2. Asking clarifying questions about dependencies, conflicts, validators.
-3. Writing a `GoalDagSpec` JSON.
-4. Running the CLI to build a parser-valid DAG file.
-5. Showing the user the resulting DAG and offering
+2. Reading the active model catalog (`.goal/model-catalog.json` when present,
+   otherwise `catalogs/pi-available-models.json`).
+3. Asking clarifying questions about dependencies, conflicts, validators, and
+   model assignment.
+4. Producing a model assignment table and writing `modelRouting` + per-node
+   `modelScenario` into the `GoalDagSpec`.
+5. Writing the `GoalDagSpec` JSON.
+6. Running the CLI to build a parser-valid DAG file.
+7. Showing the user the resulting DAG and offering
    `/goal --dag <out.dag.json>`.
+
+## Model catalog
+
+The package ships a default Pi model catalog at
+[`catalogs/pi-available-models.json`](catalogs/pi-available-models.json),
+generated from `pi --list-models` plus `~/.pi/agent/models.json`. It lists the
+available Pi model ids, context/output limits, reasoning/image support, and
+planner guidance (`recommendedFor`, `avoidFor`, `costTier`, `speedTier`, notes).
+
+Project-specific overrides should live at `.goal/model-catalog.json`. The skill
+prefers that file when it exists. The catalog's role is to inform LLM judgment;
+the LLM still chooses the final per-node `modelScenario` assignments and must
+show a model assignment table before writing the DAG.
+
+Schema: [`schemas/model-catalog.schema.json`](schemas/model-catalog.schema.json).
 
 ## Architecture
 

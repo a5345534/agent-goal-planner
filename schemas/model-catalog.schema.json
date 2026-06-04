@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/a5345534/agent-goal-planner/schemas/model-catalog.schema.json",
+  "title": "Agent Goal Planner Model Catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "name", "capturedAt", "source", "selectionPolicy", "scenarioTemplates", "models"],
+  "properties": {
+    "version": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "capturedAt": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "notes"],
+      "properties": {
+        "command": { "type": "string", "minLength": 1 },
+        "customModelsFile": { "type": "string", "minLength": 1 },
+        "notes": { "type": "string", "minLength": 1 }
+      }
+    },
+    "selectionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "instruction", "mustUseAvailableModelsOnly", "fallbackBehavior"],
+      "properties": {
+        "mode": { "enum": ["llm-assigned"] },
+        "instruction": { "type": "string", "minLength": 1 },
+        "mustUseAvailableModelsOnly": { "type": "boolean" },
+        "fallbackBehavior": { "type": "string", "minLength": 1 }
+      }
+    },
+    "scenarioTemplates": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/scenarioTemplate" }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/model" }
+    }
+  },
+  "$defs": {
+    "scenarioTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "preferredModels", "selectionHints"],
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "preferredModels": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "selectionHints": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "contextWindowTokens",
+        "maxOutputTokens",
+        "reasoning",
+        "images",
+        "relativeStrength",
+        "costTier",
+        "speedTier",
+        "recommendedFor",
+        "avoidFor",
+        "notes"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "contextWindowTokens": { "type": "integer", "minimum": 1 },
+        "maxOutputTokens": { "type": "integer", "minimum": 1 },
+        "reasoning": { "type": "boolean" },
+        "images": { "type": "boolean" },
+        "relativeStrength": { "type": "string", "minLength": 1 },
+        "costTier": { "type": "string", "minLength": 1 },
+        "speedTier": { "type": "string", "minLength": 1 },
+        "recommendedFor": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "avoidFor": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "notes": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

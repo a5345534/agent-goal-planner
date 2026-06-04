@@ -86,14 +86,34 @@ changes into the planner.
 
 - The skill's `SKILL.md` teaches the agent how to extract a
   `GoalDagSpec` from a document (creative work, the LLM's job).
+- The skill reads a model catalog and asks the LLM to assign models
+  based on task objective, scope, risk, validators, context size, and
+  required modalities. This is intentionally LLM judgment, not a hard-coded
+  heuristic.
 - The CLI (`agent-goal-planner build-dag --spec ... --out ...`) is a
   thin shell over the spec parser and the runtime round-trip
   (mechanical work, deterministic code).
-- The `references/` directory has DAG format and model-routing
-  examples for the agent to load on demand.
+- The `references/` directory has DAG format, model-routing, and
+  model-catalog examples for the agent to load on demand.
 
 This split keeps the creative and mechanical parts on opposite sides
 of a stable API boundary.
+
+### Model assignment is LLM-driven through a catalog
+
+The planner package ships `catalogs/pi-available-models.json`, generated from
+`pi --list-models` and Pi's custom `~/.pi/agent/models.json`. The catalog lists
+only models available in the current Pi installation plus human/planner guidance
+such as `recommendedFor`, `avoidFor`, cost/speed tiers, context size, image
+support, and notes.
+
+The deterministic part validates the catalog shape and ensures scenario template
+preferred models reference actual catalog models. The creative part remains with
+the LLM: the skill must show a model assignment table and then write explicit
+per-node `modelScenario` values into the `GoalDagSpec`.
+
+Project-specific catalogs can override the package default through
+`.goal/model-catalog.json`.
 
 ### The build artifact is committed
 
