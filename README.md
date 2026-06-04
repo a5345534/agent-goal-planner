@@ -26,18 +26,27 @@ This package only does two things:
 
 ## Install
 
-This package is in early development. For now, install from the local
-checkout:
+Install via Pi (matches the runtime package's pattern):
+
+```bash
+pi install git:github.com/a5345534/agent-goal-planner
+```
+
+The runtime dependency is pinned via the planner's own `package.json`
+to `github:a5345534/agent-goal-runtime#v0.1.1`, so a single install
+brings in the whole stack.
+
+For a local-development checkout:
 
 ```bash
 git clone https://github.com/a5345534/agent-goal-planner
 cd agent-goal-planner
-npm install
+npm install      # devDeps only
 npm run build
 ```
 
-Then expose the skill to Pi by adding the local path to
-`~/.pi/agent/settings.json` (or project `.pi/settings.json`):
+Then add the local path to `~/.pi/agent/settings.json` (or project
+`.pi/settings.json`):
 
 ```json
 {
@@ -141,6 +150,30 @@ touching the runtime.
 npm install
 npm run check   # build + tests
 ```
+
+### Build artifact policy
+
+`dist/` is **committed to the repo**, not gitignored. The runtime
+package does the same. The reason: `pi install` runs
+`npm install --omit=dev`, which means `tsc` is not on PATH during
+install — any `prepare` hook that tries to build will fail with
+`sh: 1: tsc: not found`. Shipping a pre-built `dist/` makes the
+package install-anywhere.
+
+**When you change `src/`, you must also rebuild `dist/` and commit
+the regenerated build output** — otherwise the published package
+will still ship the old compiled code:
+
+```bash
+npm run check   # builds + runs tests
+git add src/ dist/
+git commit
+```
+
+The `prepack` script still rebuilds on `npm pack` / `npm publish`
+to catch stale artifacts at release time.
+
+### Runtime dependency
 
 The package depends on `agent-goal-runtime` via a git ref:
 

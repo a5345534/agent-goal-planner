@@ -95,6 +95,22 @@ changes into the planner.
 This split keeps the creative and mechanical parts on opposite sides
 of a stable API boundary.
 
+### The build artifact is committed
+
+`dist/` is **committed to the repo**, not gitignored. The runtime
+package uses the same policy. The reason is concrete:
+
+`pi install` runs `npm install --omit=dev`, so `tsc` is not on PATH
+during install. Any `prepare` hook that tries to build will fail
+with `sh: 1: tsc: not found` and the package will install without a
+working CLI. Shipping a pre-built `dist/` makes the package
+install-anywhere with no install-time build.
+
+The dev workflow compensates: any change to `src/` must be
+rebuilt and the new `dist/` must be committed alongside the source
+change. The `prepack` hook still rebuilds on `npm pack` /
+`npm publish` to catch stale build output at release time.
+
 ## Data flow
 
 ```
