@@ -130,6 +130,8 @@ function cloneNode(node, defaultRisk) {
         out.completionGates = [...node.completionGates];
     if (node.modelScenario !== undefined)
         out.modelScenario = node.modelScenario;
+    if (node.thinkingLevel !== undefined)
+        out.thinkingLevel = node.thinkingLevel;
     return out;
 }
 function hasRuntimeDefaultContent(defaults) {

@@ -20,6 +20,8 @@ export interface GoalDagSpecNode {
     risk?: GoalDagNode["risk"];
     completionGates?: string[];
     modelScenario?: string;
+    /** Pi thinking level for subagent sessions: off|minimal|low|medium|high|xhigh. */
+    thinkingLevel?: string;
 }
 /**
  * Planner-side defaults.

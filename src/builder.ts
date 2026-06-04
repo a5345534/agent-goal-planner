@@ -30,6 +30,8 @@ export interface GoalDagSpecNode {
   risk?: GoalDagNode["risk"];
   completionGates?: string[];
   modelScenario?: string;
+  /** Pi thinking level for subagent sessions: off|minimal|low|medium|high|xhigh. */
+  thinkingLevel?: string;
 }
 
 /**
@@ -187,6 +189,7 @@ function cloneNode(node: GoalDagSpecNode, defaultRisk: GoalDagNode["risk"] | und
   else if (defaultRisk !== undefined) out.risk = defaultRisk;
   if (node.completionGates) out.completionGates = [...node.completionGates];
   if (node.modelScenario !== undefined) out.modelScenario = node.modelScenario;
+  if (node.thinkingLevel !== undefined) out.thinkingLevel = node.thinkingLevel;
   return out;
 }
 
