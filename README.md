@@ -138,9 +138,15 @@ npm install
 npm run check   # build + tests
 ```
 
-The package depends on `agent-goal-runtime` via a `file:` reference to a
-sibling checkout. Once `agent-goal-runtime` publishes a release, switch
-the dependency to a real version range. The runtime version required is
-the one that exports `parseGoalDagFileDocument` plus the
-`GoalDagFileDocument` / `GoalDagFileNode` / `GoalDagFileDefaults` /
-`GoalDagConflictHints` / `GoalDagNode` / `GoalModelRoutingConfig` types.
+The package depends on `agent-goal-runtime` via a git ref:
+
+```json
+"agent-goal-runtime": "github:a5345534/agent-goal-runtime#v0.1.1"
+```
+
+Pin to a tag (or a commit) so planner releases are reproducible. The
+runtime API surface the planner depends on:
+
+- `parseGoalDagFileDocument` (parser + validator)
+- `GoalDagFileDocument`, `GoalDagFileNode`, `GoalDagFileDefaults`,
+  `GoalDagConflictHints`, `GoalDagNode`, `GoalModelRoutingConfig` types.
