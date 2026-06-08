@@ -6,6 +6,7 @@ import {
   type GoalDagFileDocument,
   type GoalDagFileNode,
   type GoalDagNode,
+  type GoalDagNodeWorkspaceBinding,
   type GoalModelRoutingConfig,
 } from "agent-goal-runtime";
 
@@ -27,6 +28,8 @@ export interface GoalDagSpecNode {
   conflicts?: GoalDagConflictHints;
   scope?: string;
   workspaceStrategy?: string;
+  /** Deterministic node worktree/branch binding. Native-git nodes default worktreeSlug to node id when omitted. */
+  workspace?: GoalDagNodeWorkspaceBinding;
   risk?: GoalDagNode["risk"];
   completionGates?: string[];
   modelScenario?: string;
@@ -118,6 +121,7 @@ export function parseGoalDagSpecDocument(input: unknown): GoalDagSpec {
 export function buildGoalDagFromSpec(spec: GoalDagSpec): GoalDagFileDocument {
   const specDefaults = spec.defaults;
   const defaultRisk = specDefaults?.risk;
+  const defaultWorkspaceStrategy = specDefaults?.workspaceStrategy;
   // Runtime defaults (without the planner-only `risk` field).
   const runtimeDefaults: GoalDagFileDefaults | undefined = specDefaults
     ? cloneDefaults({
@@ -137,7 +141,7 @@ export function buildGoalDagFromSpec(spec: GoalDagSpec): GoalDagFileDocument {
       ? { defaults: runtimeDefaults }
       : {}),
     ...(spec.modelRouting ? { modelRouting: cloneModelRouting(spec.modelRouting) } : {}),
-    nodes: spec.nodes.map((node) => cloneNode(node, defaultRisk)),
+    nodes: spec.nodes.map((node) => cloneNode(node, defaultRisk, defaultWorkspaceStrategy)),
   };
   return parseGoalDagFileDocument(draft);
 }
@@ -174,23 +178,56 @@ export function validateGoalDagJson(content: string): GoalDagFileDocument {
   return parseGoalDagFileDocument(JSON.parse(content) as unknown);
 }
 
-function cloneNode(node: GoalDagSpecNode, defaultRisk: GoalDagNode["risk"] | undefined): GoalDagFileNode {
+function cloneNode(node: GoalDagSpecNode, defaultRisk: GoalDagNode["risk"] | undefined, defaultWorkspaceStrategy: string | undefined): GoalDagFileNode {
   const out: GoalDagFileNode = {
     id: node.id,
     objective: node.objective,
   };
+  const workspace = cloneNodeWorkspace(node.workspace) ?? defaultWorkspaceBindingForNode(node, defaultWorkspaceStrategy);
   if (node.after) out.after = [...node.after];
-  if (node.outputs) out.outputs = [...node.outputs];
+  if (node.outputs) out.outputs = cloneExpectedOutputs(node.id, node.outputs, workspace);
   if (node.validators) out.validators = [...node.validators];
   if (node.conflicts) out.conflicts = cloneConflicts(node.conflicts);
   if (node.scope !== undefined) out.scope = node.scope;
   if (node.workspaceStrategy !== undefined) out.workspaceStrategy = node.workspaceStrategy;
+  if (workspace) out.workspace = workspace;
   if (node.risk !== undefined) out.risk = node.risk;
   else if (defaultRisk !== undefined) out.risk = defaultRisk;
   if (node.completionGates) out.completionGates = [...node.completionGates];
   if (node.modelScenario !== undefined) out.modelScenario = node.modelScenario;
   if (node.thinkingLevel !== undefined) out.thinkingLevel = node.thinkingLevel;
   return out;
+}
+
+function defaultWorkspaceBindingForNode(node: GoalDagSpecNode, defaultWorkspaceStrategy: string | undefined): GoalDagNodeWorkspaceBinding | undefined {
+  const effectiveStrategy = node.workspaceStrategy ?? defaultWorkspaceStrategy;
+  if (!effectiveStrategy?.toLowerCase().includes("native-git")) return undefined;
+  return { worktreeSlug: node.id };
+}
+
+function cloneNodeWorkspace(workspace: GoalDagNodeWorkspaceBinding | undefined): GoalDagNodeWorkspaceBinding | undefined {
+  if (!workspace) return undefined;
+  const out: GoalDagNodeWorkspaceBinding = {};
+  if (workspace.worktreeSlug !== undefined) out.worktreeSlug = workspace.worktreeSlug;
+  if (workspace.branch !== undefined) out.branch = workspace.branch;
+  if (workspace.baseRef !== undefined) out.baseRef = workspace.baseRef;
+  return out;
+}
+
+function cloneExpectedOutputs(nodeId: string, outputs: string[], workspace: GoalDagNodeWorkspaceBinding | undefined): string[] {
+  return outputs.map((output) => normalizeWorkspaceRootRelativeOutput(nodeId, output, workspace));
+}
+
+function normalizeWorkspaceRootRelativeOutput(nodeId: string, output: string, workspace: GoalDagNodeWorkspaceBinding | undefined): string {
+  const normalized = output.replace(/\\/g, "/");
+  const match = normalized.match(/^\.worktrees\/([^/]+)\/(.+)$/);
+  if (!match) return output;
+  const [, worktreeSlug, relativePath] = match;
+  if (workspace?.worktreeSlug && worktreeSlug === workspace.worktreeSlug) return relativePath;
+  throw new Error(
+    `Invalid goal DAG spec: node ${nodeId} output ${JSON.stringify(output)} must be workspace-root-relative; ` +
+      `put worktree binding in node.workspace instead of expected output paths`,
+  );
 }
 
 function hasRuntimeDefaultContent(defaults: GoalDagFileDefaults): boolean {
@@ -251,5 +288,6 @@ export type {
   GoalDagFileDocument,
   GoalDagFileNode,
   GoalDagNode,
+  GoalDagNodeWorkspaceBinding,
   GoalModelRoutingConfig,
 };

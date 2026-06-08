@@ -33,7 +33,7 @@ pi install git:github.com/a5345534/agent-goal-planner
 ```
 
 The runtime dependency is pinned via the planner's own `package.json`
-to `github:a5345534/agent-goal-runtime#v0.1.1`, so a single install
+to `github:a5345534/agent-goal-runtime#v0.1.5`, so a single install
 brings in the whole stack.
 
 For a local-development checkout:
@@ -81,7 +81,12 @@ import {
 const spec: GoalDagSpec = {
   objective: "Ship the People Frappe backend slices",
   nodes: [
-    { id: "attendance-parity", objective: "Add attendance parity fixtures" },
+    {
+      id: "attendance-parity",
+      objective: "Add attendance parity fixtures",
+      workspace: { worktreeSlug: "attendance-parity" },
+      outputs: ["tests/test_attendance_parity.py"],
+    },
     { id: "payroll-doctypes",  objective: "Add payroll DocTypes" },
     {
       id: "integration-validation",
@@ -95,6 +100,10 @@ const document = buildGoalDagFromSpec(spec);          // throws on invalid spec
 const json = serializeGoalDagDocument(document);      // pretty JSON
 const reparsed = validateGoalDagJson(json);           // smoke check
 ```
+
+For native-git nodes, the builder emits `workspace.worktreeSlug = node.id` when
+omitted. Expected `outputs` are emitted relative to that node workspace root; do
+not put `.worktrees/<slug>/...` in artifact paths.
 
 ## Pi skill
 

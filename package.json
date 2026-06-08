@@ -49,7 +49,7 @@
   },
   "homepage": "https://github.com/a5345534/agent-goal-planner#readme",
   "dependencies": {
-    "agent-goal-runtime": "github:a5345534/agent-goal-runtime#v0.1.2"
+    "agent-goal-runtime": "github:a5345534/agent-goal-runtime#v0.1.5"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

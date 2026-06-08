@@ -23,11 +23,12 @@ lives at:
 | `id` | yes | kebab-case string | Stable node id and slug. Must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`. |
 | `objective` | yes | non-empty string | Work assigned to the subagent for this node. |
 | `after` | no | array of node ids | Dependencies that must be `complete` before this node can run. |
-| `outputs` | no | string array | Expected files/directories checked by controller validation. |
+| `outputs` | no | string array | Expected files/directories checked by controller validation. Must be relative to the subagent workspace root; never include `.worktrees/...`. |
 | `validators` | no | string array | Shell validators for controller validation. |
 | `conflicts` | no | object | File / module / capability conflict hints for scheduler serialization. |
 | `scope` | no | string | Human-readable scope label. |
 | `workspaceStrategy` | no | string | Workspace allocation strategy. Defaults to native Git worktree in Pi. |
+| `workspace` | no | object | Deterministic node worktree binding: `worktreeSlug`, optional `branch`, optional `baseRef`. For native-git nodes, the planner emits `worktreeSlug: <node id>` when omitted. |
 | `risk` | no | `low` / `medium` / `high` | Risk label for scheduling / model-routing / review policy. |
 | `completionGates` | no | string array | Completion gates. Defaults to `controller-validation`. |
 | `modelScenario` | no | scenario id | Explicit model-routing scenario for this node. |
@@ -42,6 +43,7 @@ lives at:
 - The graph is acyclic.
 - `modelScenario` references an entry in `modelRouting.scenarios` (when
   `modelRouting` is declared) — or `modelRouting` must declare the scenario.
+- `outputs` are workspace-root-relative artifact paths. Put deterministic worktree/branch binding in `workspace`; do not put `.worktrees/<slug>/...` in outputs.
 
 `agent-goal-planner build-dag` rejects any spec that violates these rules.
 The error message tells you which field; fix the spec and retry.
@@ -53,7 +55,12 @@ The error message tells you which field; fix the spec and retry.
   "version": 1,
   "objective": "Complete People Frappe backend remaining slices",
   "nodes": [
-    { "id": "attendance-parity", "objective": "Add attendance parity fixtures" },
+    {
+      "id": "attendance-parity",
+      "objective": "Add attendance parity fixtures",
+      "workspace": { "worktreeSlug": "attendance-parity" },
+      "outputs": ["tests/test_attendance_parity.py"]
+    },
     { "id": "payroll-doctypes", "objective": "Add payroll DocTypes" },
     {
       "id": "integration-validation",

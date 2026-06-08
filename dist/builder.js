@@ -57,6 +57,7 @@ export function parseGoalDagSpecDocument(input) {
 export function buildGoalDagFromSpec(spec) {
     const specDefaults = spec.defaults;
     const defaultRisk = specDefaults?.risk;
+    const defaultWorkspaceStrategy = specDefaults?.workspaceStrategy;
     // Runtime defaults (without the planner-only `risk` field).
     const runtimeDefaults = specDefaults
         ? cloneDefaults({
@@ -75,7 +76,7 @@ export function buildGoalDagFromSpec(spec) {
             ? { defaults: runtimeDefaults }
             : {}),
         ...(spec.modelRouting ? { modelRouting: cloneModelRouting(spec.modelRouting) } : {}),
-        nodes: spec.nodes.map((node) => cloneNode(node, defaultRisk)),
+        nodes: spec.nodes.map((node) => cloneNode(node, defaultRisk, defaultWorkspaceStrategy)),
     };
     return parseGoalDagFileDocument(draft);
 }
@@ -105,15 +106,16 @@ export function serializeGoalDagDocument(document, options = {}) {
 export function validateGoalDagJson(content) {
     return parseGoalDagFileDocument(JSON.parse(content));
 }
-function cloneNode(node, defaultRisk) {
+function cloneNode(node, defaultRisk, defaultWorkspaceStrategy) {
     const out = {
         id: node.id,
         objective: node.objective,
     };
+    const workspace = cloneNodeWorkspace(node.workspace) ?? defaultWorkspaceBindingForNode(node, defaultWorkspaceStrategy);
     if (node.after)
         out.after = [...node.after];
     if (node.outputs)
-        out.outputs = [...node.outputs];
+        out.outputs = cloneExpectedOutputs(node.id, node.outputs, workspace);
     if (node.validators)
         out.validators = [...node.validators];
     if (node.conflicts)
@@ -122,6 +124,8 @@ function cloneNode(node, defaultRisk) {
         out.scope = node.scope;
     if (node.workspaceStrategy !== undefined)
         out.workspaceStrategy = node.workspaceStrategy;
+    if (workspace)
+        out.workspace = workspace;
     if (node.risk !== undefined)
         out.risk = node.risk;
     else if (defaultRisk !== undefined)
@@ -133,6 +137,38 @@ function cloneNode(node, defaultRisk) {
     if (node.thinkingLevel !== undefined)
         out.thinkingLevel = node.thinkingLevel;
     return out;
+}
+function defaultWorkspaceBindingForNode(node, defaultWorkspaceStrategy) {
+    const effectiveStrategy = node.workspaceStrategy ?? defaultWorkspaceStrategy;
+    if (!effectiveStrategy?.toLowerCase().includes("native-git"))
+        return undefined;
+    return { worktreeSlug: node.id };
+}
+function cloneNodeWorkspace(workspace) {
+    if (!workspace)
+        return undefined;
+    const out = {};
+    if (workspace.worktreeSlug !== undefined)
+        out.worktreeSlug = workspace.worktreeSlug;
+    if (workspace.branch !== undefined)
+        out.branch = workspace.branch;
+    if (workspace.baseRef !== undefined)
+        out.baseRef = workspace.baseRef;
+    return out;
+}
+function cloneExpectedOutputs(nodeId, outputs, workspace) {
+    return outputs.map((output) => normalizeWorkspaceRootRelativeOutput(nodeId, output, workspace));
+}
+function normalizeWorkspaceRootRelativeOutput(nodeId, output, workspace) {
+    const normalized = output.replace(/\\/g, "/");
+    const match = normalized.match(/^\.worktrees\/([^/]+)\/(.+)$/);
+    if (!match)
+        return output;
+    const [, worktreeSlug, relativePath] = match;
+    if (workspace?.worktreeSlug && worktreeSlug === workspace.worktreeSlug)
+        return relativePath;
+    throw new Error(`Invalid goal DAG spec: node ${nodeId} output ${JSON.stringify(output)} must be workspace-root-relative; ` +
+        `put worktree binding in node.workspace instead of expected output paths`);
 }
 function hasRuntimeDefaultContent(defaults) {
     return (defaults.outputs !== undefined ||

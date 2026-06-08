@@ -61,10 +61,12 @@ DAG file and round-trips it through `agent-goal-runtime`'s parser for validation
        id: string;               // kebab-case, ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$
        objective: string;        // work assigned to the subagent
        after?: string[];         // node ids that must complete first
-       outputs?: string[];       // expected files / dirs for validation
+       outputs?: string[];       // expected files / dirs, workspace-root-relative (no .worktrees/...)
        validators?: string[];    // shell validators
        conflicts?: { files?: string[]; modules?: string[]; capabilities?: string[] };
        scope?: string;
+       workspaceStrategy?: string;
+       workspace?: { worktreeSlug?: string; branch?: string; baseRef?: string }; // deterministic node workspace binding
        risk?: "low" | "medium" | "high";
        completionGates?: string[];
        modelScenario?: string;
@@ -105,7 +107,9 @@ DAG file and round-trips it through `agent-goal-runtime`'s parser for validation
    ```
 
    The CLI round-trips the spec through `agent-goal-runtime`'s
-   `parseGoalDagFileDocument()` and refuses to write an invalid DAG.
+   `parseGoalDagFileDocument()` and refuses to write an invalid DAG. For native-git nodes,
+   it emits `workspace.worktreeSlug` when omitted and normalizes matching
+   `.worktrees/<slug>/...` outputs to workspace-root-relative paths.
 
 7. **Show the user the resulting DAG** (objective + node ids + dependency
    graph + model assignment table) and the diff vs. the document's intent,
@@ -123,7 +127,10 @@ DAG file and round-trips it through `agent-goal-runtime`'s parser for validation
   independent.
 - **Do not invent `validators` or `outputs` the document does not support.**
   The runtime will run validators as plain shell commands; only include them
-  when the document specifies the check. Otherwise omit the field.
+  when the document specifies the check. Otherwise omit the field. Outputs must
+  be relative to the node workspace root; if you need a deterministic worktree
+  name, set `workspace.worktreeSlug` instead of prefixing outputs with
+  `.worktrees/...`.
 - **Do not use models outside the active model catalog.** Declare every chosen
   model in `modelRouting.scenarios`, then assign each node with `modelScenario`.
   Omit `modelScenario` only after warning the user that runtime fallback will

@@ -158,6 +158,53 @@ test("buildGoalDagFromSpec omits risk on every node when neither default nor nod
         assert.equal(node.risk, undefined);
     }
 });
+test("buildGoalDagFromSpec emits node workspace bindings for native-git nodes", () => {
+    const document = buildGoalDagFromSpec({
+        objective: "x",
+        defaults: { workspaceStrategy: "native-git-worktree" },
+        nodes: [
+            { id: "auto-bound", objective: "a" },
+            {
+                id: "custom-bound",
+                objective: "b",
+                workspace: { worktreeSlug: "custom-slug", branch: "goal/custom-bound", baseRef: "master" },
+            },
+        ],
+    });
+    assert.deepEqual(document.nodes[0]?.workspace, { worktreeSlug: "auto-bound" });
+    assert.deepEqual(document.nodes[1]?.workspace, {
+        worktreeSlug: "custom-slug",
+        branch: "goal/custom-bound",
+        baseRef: "master",
+    });
+});
+test("buildGoalDagFromSpec emits workspace-root-relative outputs", () => {
+    const document = buildGoalDagFromSpec({
+        objective: "x",
+        defaults: { workspaceStrategy: "native-git-worktree" },
+        nodes: [
+            {
+                id: "impl-node",
+                objective: "a",
+                outputs: [".worktrees/impl-node/projects/AOS/src/index.ts", "README.md"],
+            },
+        ],
+    });
+    assert.deepEqual(document.nodes[0]?.outputs, ["projects/AOS/src/index.ts", "README.md"]);
+});
+test("buildGoalDagFromSpec rejects expected outputs bound to another worktree", () => {
+    assert.throws(() => buildGoalDagFromSpec({
+        objective: "x",
+        defaults: { workspaceStrategy: "native-git-worktree" },
+        nodes: [
+            {
+                id: "impl-node",
+                objective: "a",
+                outputs: [".worktrees/other-node/projects/AOS/src/index.ts"],
+            },
+        ],
+    }), /workspace-root-relative/);
+});
 test("buildGoalDagFromSpec keeps non-risk defaults fields intact when flattening risk", () => {
     const document = buildGoalDagFromSpec({
         objective: "x",

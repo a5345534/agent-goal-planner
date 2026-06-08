@@ -1,4 +1,4 @@
-import { type GoalDagConflictHints, type GoalDagFileDefaults, type GoalDagFileDocument, type GoalDagFileNode, type GoalDagNode, type GoalModelRoutingConfig } from "agent-goal-runtime";
+import { type GoalDagConflictHints, type GoalDagFileDefaults, type GoalDagFileDocument, type GoalDagFileNode, type GoalDagNode, type GoalDagNodeWorkspaceBinding, type GoalModelRoutingConfig } from "agent-goal-runtime";
 /**
  * Programmatic input to {@link buildGoalDagFromSpec}.
  *
@@ -17,6 +17,8 @@ export interface GoalDagSpecNode {
     conflicts?: GoalDagConflictHints;
     scope?: string;
     workspaceStrategy?: string;
+    /** Deterministic node worktree/branch binding. Native-git nodes default worktreeSlug to node id when omitted. */
+    workspace?: GoalDagNodeWorkspaceBinding;
     risk?: GoalDagNode["risk"];
     completionGates?: string[];
     modelScenario?: string;
@@ -87,4 +89,4 @@ export declare function serializeGoalDagDocument(document: GoalDagFileDocument, 
  * the user.
  */
 export declare function validateGoalDagJson(content: string): GoalDagFileDocument;
-export type { GoalDagConflictHints, GoalDagFileDefaults, GoalDagFileDocument, GoalDagFileNode, GoalDagNode, GoalModelRoutingConfig, };
+export type { GoalDagConflictHints, GoalDagFileDefaults, GoalDagFileDocument, GoalDagFileNode, GoalDagNode, GoalDagNodeWorkspaceBinding, GoalModelRoutingConfig, };
