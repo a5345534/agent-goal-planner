@@ -2,20 +2,21 @@
 import { buildGoalDagFromSpecFile } from "../builder.js";
 function printUsage() {
     process.stdout.write([
-        "agent-goal-planner build-dag — build a Goal DAG file from a spec",
+        "goal-dag build-dag — build a Goal DAG file from a spec",
         "",
         "Usage:",
-        "  agent-goal-planner build-dag --spec <path> --out <path>",
+        "  goal-dag build-dag --spec <path> --out <path> [--trace <path>]",
         "",
         "Arguments:",
         "  --spec <path>   Path to a JSON file containing a GoalDagSpec",
         "  --out <path>    Path to write the validated DAG JSON file",
+        "  --trace <path>  Optional path to write the planning trace sidecar JSON",
         "  -h, --help      Show this help",
         "",
     ].join("\n"));
 }
 function parseArgs(argv) {
-    const opts = { spec: "", out: "", help: false };
+    const opts = { spec: "", out: "", trace: "", help: false };
     // Consume the leading subcommand if present. Today we only ship one
     // subcommand, so the parser just accepts and ignores it.
     if (argv[0] === "build-dag")
@@ -40,6 +41,13 @@ function parseArgs(argv) {
             opts.out = value;
             continue;
         }
+        if (arg === "--trace") {
+            const value = argv[++i];
+            if (!value)
+                throw new Error("--trace requires a path argument");
+            opts.trace = value;
+            continue;
+        }
         throw new Error(`Unknown argument: ${arg}`);
     }
     if (!opts.help) {
@@ -56,8 +64,13 @@ async function main() {
         printUsage();
         return;
     }
-    const document = buildGoalDagFromSpecFile(args.spec, args.out);
+    const document = buildGoalDagFromSpecFile(args.spec, args.out, {
+        ...(args.trace ? { tracePath: args.trace } : {}),
+    });
     process.stdout.write(`Wrote Goal DAG file (${document.nodes.length} node${document.nodes.length === 1 ? "" : "s"}) to ${args.out}\n`);
+    if (args.trace) {
+        process.stdout.write(`Wrote planning trace to ${args.trace}\n`);
+    }
 }
 main().catch((error) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

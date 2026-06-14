@@ -36,6 +36,8 @@ export function parseGoalDagSpecDocument(input) {
             throw new Error(`Invalid goal DAG spec: defaults.risk must be one of low, medium, high (got ${JSON.stringify(risk)})`);
         }
     }
+    validateOptionalStringArray(record.openQuestions, "openQuestions");
+    record.nodes.forEach((node, index) => validatePlanningMetadata(node, `nodes[${index}]`));
     return record;
 }
 /**
@@ -48,17 +50,16 @@ export function parseGoalDagSpecDocument(input) {
  * cycle, and model-scenario referential-integrity rules. A failure
  * surfaces as a thrown error before the caller writes the file.
  *
- * Defaults handling: `spec.defaults.risk` is planner-only (the runtime
- * schema does not allow `risk` in defaults), so we propagate it onto
- * every node that does not set its own `risk` and strip it from the
- * emitted defaults. All other `spec.defaults` fields pass through
- * unchanged.
+ * Defaults handling: `spec.defaults.risk` is spec-only (the runtime schema
+ * does not allow `risk` in defaults), so we propagate it onto every node
+ * that does not set its own `risk` and strip it from the emitted defaults.
+ * All other `spec.defaults` fields pass through unchanged.
  */
 export function buildGoalDagFromSpec(spec) {
     const specDefaults = spec.defaults;
     const defaultRisk = specDefaults?.risk;
     const defaultWorkspaceStrategy = specDefaults?.workspaceStrategy;
-    // Runtime defaults (without the planner-only `risk` field).
+    // Runtime defaults (without the spec-only `risk` field).
     const runtimeDefaults = specDefaults
         ? cloneDefaults({
             outputs: specDefaults.outputs,
@@ -81,13 +82,49 @@ export function buildGoalDagFromSpec(spec) {
     return parseGoalDagFileDocument(draft);
 }
 /**
- * Convenience helper: read a spec file, build a validated document, write
- * a pretty-printed DAG JSON to disk, and return the document.
+ * Build a producer-side trace that explains evidence, state transitions,
+ * dependencies, and model assignments. The trace is not part of the runtime
+ * DAG schema and is intended for review / audit only.
  */
-export function buildGoalDagFromSpecFile(specPath, outPath) {
+export function buildGoalDagPlanningTrace(spec, document = buildGoalDagFromSpec(spec)) {
+    const warnings = [];
+    const evidenceContext = collectEvidence(spec, warnings);
+    const nodesById = new Map(spec.nodes.map((node) => [node.id, node]));
+    const transitions = document.nodes.map((node) => {
+        const specNode = nodesById.get(node.id);
+        return {
+            nodeId: node.id,
+            consumes: [...(specNode?.consumes ?? [])],
+            produces: [...(specNode?.produces ?? [])],
+            evidence: [...(evidenceContext.byNode.get(node.id) ?? [])],
+        };
+    });
+    const dependencyReview = document.nodes.map((node) => buildDependencyReviewRow(node.id, nodesById, evidenceContext.byNode, warnings));
+    const modelAssignments = document.nodes.map((node) => buildModelAssignmentRow(node.id, spec, nodesById.get(node.id), warnings));
+    return {
+        version: 1,
+        objective: document.objective,
+        evidence: evidenceContext.evidence,
+        transitions,
+        dependencyReview,
+        modelAssignments,
+        warnings,
+        openQuestions: [...(spec.openQuestions ?? [])],
+    };
+}
+/**
+ * Convenience helper: read a spec file, build a validated document, write
+ * a pretty-printed DAG JSON to disk, optionally write a planning trace, and
+ * return the document.
+ */
+export function buildGoalDagFromSpecFile(specPath, outPath, options = {}) {
     const spec = parseGoalDagSpec(readFileSync(specPath, "utf8"));
     const document = buildGoalDagFromSpec(spec);
     writeFileSync(outPath, serializeGoalDagDocument(document), "utf8");
+    if (options.tracePath) {
+        const trace = buildGoalDagPlanningTrace(spec, document);
+        writeFileSync(options.tracePath, serializeGoalDagPlanningTrace(trace), "utf8");
+    }
     return document;
 }
 /**
@@ -96,6 +133,10 @@ export function buildGoalDagFromSpecFile(specPath, outPath) {
  */
 export function serializeGoalDagDocument(document, options = {}) {
     return JSON.stringify(document, null, options.pretty === false ? undefined : 2);
+}
+/** Serialize a planning trace JSON sidecar. */
+export function serializeGoalDagPlanningTrace(trace, options = {}) {
+    return JSON.stringify(trace, null, options.pretty === false ? undefined : 2);
 }
 /**
  * Validate a candidate JSON string as a Goal DAG document (i.e. the
@@ -217,5 +258,186 @@ function cloneModelRouting(config) {
     if (config.rules)
         out.rules = config.rules.map((rule) => ({ ...rule }));
     return out;
+}
+function collectEvidence(spec, warnings) {
+    const evidence = [];
+    const byNode = new Map();
+    const usedIds = new Set();
+    let nextId = 1;
+    for (const node of spec.nodes) {
+        const nodeEvidenceIds = [];
+        for (const item of node.evidence ?? []) {
+            const normalized = normalizeEvidenceItem(item, node.id, () => `ev${nextId++}`);
+            let id = normalized.id;
+            if (usedIds.has(id)) {
+                const original = id;
+                id = `ev${nextId++}`;
+                warnings.push(`Evidence id ${JSON.stringify(original)} is duplicated; reassigned to ${id}`);
+            }
+            usedIds.add(id);
+            evidence.push({ ...normalized, id });
+            nodeEvidenceIds.push(id);
+        }
+        if (nodeEvidenceIds.length > 0)
+            byNode.set(node.id, nodeEvidenceIds);
+    }
+    return { evidence, byNode };
+}
+function normalizeEvidenceItem(item, nodeId, nextAutoId) {
+    if (typeof item === "string") {
+        return {
+            id: nextAutoId(),
+            nodeId,
+            quote: item,
+            supports: [`node:${nodeId}`],
+        };
+    }
+    const quote = item.quote ?? item.note ?? item.source ?? `Evidence for ${nodeId}`;
+    return {
+        id: item.id?.trim() || nextAutoId(),
+        nodeId,
+        ...(item.source ? { source: item.source } : {}),
+        quote,
+        supports: item.supports ? [...item.supports] : [`node:${nodeId}`],
+    };
+}
+function buildDependencyReviewRow(nodeId, nodesById, evidenceByNode, globalWarnings) {
+    const node = nodesById.get(nodeId);
+    const after = [...(node?.after ?? [])];
+    const evidence = new Set(evidenceByNode.get(nodeId) ?? []);
+    const rowWarnings = [];
+    const reasons = [];
+    if (!node) {
+        const warning = `Trace could not find spec metadata for runtime node ${nodeId}`;
+        globalWarnings.push(warning);
+        return { nodeId, after, whyNotParallel: warning, evidence: [], warnings: [warning] };
+    }
+    if (after.length === 0) {
+        const conflictSummary = formatConflictSummary(node.conflicts);
+        return {
+            nodeId,
+            after,
+            whyNotParallel: conflictSummary
+                ? `No after dependencies declared; runnable in parallel with other ready nodes, subject to conflict hints (${conflictSummary}).`
+                : "No after dependencies declared; runnable in parallel with other ready nodes.",
+            evidence: [...evidence],
+        };
+    }
+    for (const dependencyId of after) {
+        const dependency = nodesById.get(dependencyId);
+        for (const dependencyEvidenceId of evidenceByNode.get(dependencyId) ?? []) {
+            evidence.add(dependencyEvidenceId);
+        }
+        if (!dependency) {
+            rowWarnings.push(`Dependency ${dependencyId} is not present in the spec`);
+            continue;
+        }
+        const consumedFromDependency = (node.consumes ?? []).filter((state) => (dependency.produces ?? []).includes(state));
+        if (consumedFromDependency.length > 0) {
+            reasons.push(`Depends on ${dependencyId} for produced state(s): ${consumedFromDependency.map((state) => JSON.stringify(state)).join(", ")}.`);
+        }
+        else {
+            rowWarnings.push(`Dependency ${dependencyId} has no declared produced state consumed by ${nodeId}; confirm this edge is explicitly supported by source evidence.`);
+        }
+    }
+    if (reasons.length === 0) {
+        reasons.push("Dependencies are declared, but no consumes/produces state match was found in spec-only metadata.");
+    }
+    for (const warning of rowWarnings)
+        globalWarnings.push(`${nodeId}: ${warning}`);
+    return {
+        nodeId,
+        after,
+        whyNotParallel: reasons.join(" "),
+        evidence: [...evidence],
+        ...(rowWarnings.length > 0 ? { warnings: rowWarnings } : {}),
+    };
+}
+function formatConflictSummary(conflicts) {
+    if (!conflicts)
+        return "";
+    const parts = [];
+    if (conflicts.files?.length)
+        parts.push(`files=${conflicts.files.join(",")}`);
+    if (conflicts.modules?.length)
+        parts.push(`modules=${conflicts.modules.join(",")}`);
+    if (conflicts.capabilities?.length)
+        parts.push(`capabilities=${conflicts.capabilities.join(",")}`);
+    return parts.join("; ");
+}
+function buildModelAssignmentRow(nodeId, spec, node, globalWarnings) {
+    const warnings = [];
+    const scenario = node?.modelScenario ?? spec.defaults?.modelScenario ?? spec.modelRouting?.defaultSubagentScenario;
+    if (!scenario) {
+        const warning = "No explicit modelScenario, defaults.modelScenario, or defaultSubagentScenario; runtime may fall back to the current Pi session model.";
+        warnings.push(warning);
+        globalWarnings.push(`${nodeId}: ${warning}`);
+        return {
+            nodeId,
+            reason: node?.modelRationale ?? "No model assignment declared.",
+            warnings,
+        };
+    }
+    const model = spec.modelRouting?.scenarios?.[scenario]?.model;
+    const description = spec.modelRouting?.scenarios?.[scenario]?.description;
+    if (!model) {
+        const warning = `Scenario ${JSON.stringify(scenario)} is not declared in modelRouting.scenarios.`;
+        warnings.push(warning);
+        globalWarnings.push(`${nodeId}: ${warning}`);
+    }
+    return {
+        nodeId,
+        scenario,
+        ...(model ? { model } : {}),
+        reason: node?.modelRationale ?? description ?? `Uses scenario ${scenario}.`,
+        ...(warnings.length > 0 ? { warnings } : {}),
+    };
+}
+function validatePlanningMetadata(input, path) {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+        throw new Error(`Invalid goal DAG spec: ${path} must be an object`);
+    }
+    const record = input;
+    validateOptionalStringArray(record.consumes, `${path}.consumes`);
+    validateOptionalStringArray(record.produces, `${path}.produces`);
+    validateEvidenceArray(record.evidence, `${path}.evidence`);
+    if (record.modelRationale !== undefined && typeof record.modelRationale !== "string") {
+        throw new Error(`Invalid goal DAG spec: ${path}.modelRationale must be a string when present`);
+    }
+}
+function validateOptionalStringArray(input, path) {
+    if (input === undefined)
+        return;
+    if (!Array.isArray(input))
+        throw new Error(`Invalid goal DAG spec: ${path} must be an array of strings`);
+    for (const [index, value] of input.entries()) {
+        if (typeof value !== "string" || !value.trim()) {
+            throw new Error(`Invalid goal DAG spec: ${path}[${index}] must be a non-empty string`);
+        }
+    }
+}
+function validateEvidenceArray(input, path) {
+    if (input === undefined)
+        return;
+    if (!Array.isArray(input))
+        throw new Error(`Invalid goal DAG spec: ${path} must be an array`);
+    for (const [index, value] of input.entries()) {
+        const itemPath = `${path}[${index}]`;
+        if (typeof value === "string") {
+            if (!value.trim())
+                throw new Error(`Invalid goal DAG spec: ${itemPath} must be a non-empty string`);
+            continue;
+        }
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+            throw new Error(`Invalid goal DAG spec: ${itemPath} must be a string or object`);
+        }
+        const record = value;
+        for (const key of ["id", "source", "quote", "note"]) {
+            if (record[key] !== undefined && (typeof record[key] !== "string" || !record[key].trim())) {
+                throw new Error(`Invalid goal DAG spec: ${itemPath}.${key} must be a non-empty string when present`);
+            }
+        }
+        validateOptionalStringArray(record.supports, `${itemPath}.supports`);
+    }
 }
 //# sourceMappingURL=builder.js.map

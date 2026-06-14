@@ -3,8 +3,10 @@ export {
   parseGoalDagSpecDocument,
   buildGoalDagFromSpec,
   buildGoalDagFromSpecFile,
+  buildGoalDagPlanningTrace,
   validateGoalDagJson,
   serializeGoalDagDocument,
+  serializeGoalDagPlanningTrace,
 } from "./builder.js";
 
 export {
@@ -14,16 +16,24 @@ export {
 
 export type {
   ModelCatalog,
-  ModelCatalogModel,
-  ModelCatalogScenarioTemplate,
-  ModelCatalogSelectionPolicy,
-  ModelCatalogSource,
+  ModelRoutingCatalogConfig,
+  ModelRoutingCatalogRule,
+  ModelRoutingConditionScalar,
+  ModelRoutingConditionValue,
 } from "./model-catalog.js";
 
 export type {
   GoalDagSpec,
   GoalDagSpecNode,
   GoalDagSpecDefaults,
+  GoalDagSpecEvidence,
+  GoalDagSpecEvidenceReference,
+  GoalDagPlanningTrace,
+  GoalDagPlanningTraceDependencyReview,
+  GoalDagPlanningTraceEvidence,
+  GoalDagPlanningTraceModelAssignment,
+  GoalDagPlanningTraceTransition,
+  BuildGoalDagFromSpecFileOptions,
   GoalDagFileDocument,
   GoalDagFileNode,
   GoalDagFileDefaults,

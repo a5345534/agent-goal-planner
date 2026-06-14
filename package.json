@@ -1,13 +1,12 @@
 {
-  "name": "agent-goal-planner",
+  "name": "goal-dag",
   "version": "0.1.0",
   "type": "module",
   "description": "Plan Goal DAG files from development documents for the agent-goal-runtime.",
   "keywords": [
     "pi-package",
-    "agent-goal-planner",
-    "agent-goal-runtime",
-    "goal-dag"
+    "goal-dag",
+    "agent-goal-runtime"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,7 +18,7 @@
     "./skills": "./skills"
   },
   "bin": {
-    "agent-goal-planner": "./dist/scripts/build-dag.js"
+    "goal-dag": "./dist/scripts/build-dag.js"
   },
   "files": [
     "dist",
@@ -42,12 +41,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/a5345534/agent-goal-planner.git"
+    "url": "git+https://github.com/a5345534/goal-dag.git"
   },
   "bugs": {
-    "url": "https://github.com/a5345534/agent-goal-planner/issues"
+    "url": "https://github.com/a5345534/goal-dag/issues"
   },
-  "homepage": "https://github.com/a5345534/agent-goal-planner#readme",
+  "homepage": "https://github.com/a5345534/goal-dag#readme",
   "dependencies": {
     "agent-goal-runtime": "github:a5345534/agent-goal-runtime#v0.1.5"
   },

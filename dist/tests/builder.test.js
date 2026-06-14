@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildGoalDagFromSpec, buildGoalDagFromSpecFile, parseGoalDagSpec, parseGoalDagSpecDocument, serializeGoalDagDocument, validateGoalDagJson, } from "../index.js";
+import { buildGoalDagFromSpec, buildGoalDagFromSpecFile, buildGoalDagPlanningTrace, parseGoalDagSpec, parseGoalDagSpecDocument, serializeGoalDagDocument, serializeGoalDagPlanningTrace, validateGoalDagJson, } from "../index.js";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = resolve(HERE, "..", "scripts", "build-dag.js");
 const baseSpec = {
@@ -85,7 +85,7 @@ test("buildGoalDagFromSpec forwards parser errors from the runtime", () => {
     }), /cycle/);
 });
 test("buildGoalDagFromSpecFile writes a parser-valid file", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agent-goal-planner-"));
+    const dir = mkdtempSync(join(tmpdir(), "goal-dag-"));
     try {
         const specPath = join(dir, "spec.json");
         const outPath = join(dir, "out.dag.json");
@@ -93,7 +93,7 @@ test("buildGoalDagFromSpecFile writes a parser-valid file", () => {
         const document = buildGoalDagFromSpecFile(specPath, outPath);
         const onDisk = readFileSync(outPath, "utf8");
         assert.match(onDisk, /"objective": "Complete People Frappe backend remaining slices"/);
-        // Independently validate the file the planner wrote.
+        // Independently validate the file the builder wrote.
         const reparsed = validateGoalDagJson(onDisk);
         assert.deepEqual(reparsed.nodes.map((n) => n.id), document.nodes.map((n) => n.id));
     }
@@ -102,7 +102,7 @@ test("buildGoalDagFromSpecFile writes a parser-valid file", () => {
     }
 });
 test("buildGoalDagFromSpecFile refuses to write an invalid spec", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agent-goal-planner-"));
+    const dir = mkdtempSync(join(tmpdir(), "goal-dag-"));
     try {
         const specPath = join(dir, "spec.json");
         const outPath = join(dir, "out.dag.json");
@@ -124,10 +124,10 @@ test("buildGoalDagFromSpec flattens defaults.risk onto every node that omits ris
         ],
     });
     // The runtime's GoalDagFileDefaults type does not include `risk`, so the
-    // planner-only `risk` is guaranteed to be absent at the type level. The
+    // spec-only `risk` is guaranteed to be absent at the type level. The
     // test below also runtime-checks the value to defend against future
     // type drift.
-    assert.equal(document.defaults?.risk, undefined, "planner-only risk must be stripped from defaults");
+    assert.equal(document.defaults?.risk, undefined, "spec-only risk must be stripped from defaults");
     for (const node of document.nodes) {
         assert.equal(node.risk, "high", `${node.id} should inherit risk=high from defaults`);
     }
@@ -220,7 +220,7 @@ test("buildGoalDagFromSpec keeps non-risk defaults fields intact when flattening
         "human-confirmation",
     ]);
     assert.deepEqual(document.defaults?.validators, ["npm test"]);
-    assert.equal(document.defaults?.risk, undefined, "planner-only risk must be stripped");
+    assert.equal(document.defaults?.risk, undefined, "spec-only risk must be stripped");
     assert.equal(document.nodes[0]?.risk, "high");
 });
 test("buildGoalDagFromSpec preserves the user's actual common-module audit use case", () => {
@@ -279,10 +279,117 @@ test("parseGoalDagSpecDocument accepts valid defaults.risk values", () => {
         assert.equal(spec.defaults?.risk, risk);
     }
 });
+test("buildGoalDagFromSpec strips spec-only planning metadata from runtime DAG output", () => {
+    const document = buildGoalDagFromSpec({
+        objective: "x",
+        modelRouting: {
+            scenarios: {
+                implementation: { model: "openai-codex/gpt-5.3-codex-spark" },
+            },
+            defaultSubagentScenario: "implementation",
+        },
+        nodes: [
+            {
+                id: "a",
+                objective: "a",
+                consumes: ["input reviewed"],
+                produces: ["implementation complete"],
+                evidence: [{ id: "ev-a", source: "prd.md#A", quote: "Do A first" }],
+                modelScenario: "implementation",
+                modelRationale: "Low-risk implementation under 128K context",
+            },
+        ],
+    });
+    const json = serializeGoalDagDocument(document);
+    assert.doesNotMatch(json, /consumes|produces|modelRationale|ev-a/);
+    assert.equal(validateGoalDagJson(json).nodes[0]?.id, "a");
+});
+test("buildGoalDagPlanningTrace records evidence transitions dependencies and models", () => {
+    const spec = {
+        objective: "Ship traceable DAG",
+        openQuestions: ["Confirm final validator command"],
+        modelRouting: {
+            scenarios: {
+                docs: { model: "openai-codex/gpt-5.3-codex-spark", description: "Fast docs/spec work" },
+                review: { model: "deepseek/deepseek-v4-pro", description: "Review work" },
+            },
+            defaultSubagentScenario: "docs",
+        },
+        nodes: [
+            {
+                id: "write-spec",
+                objective: "Write spec",
+                produces: ["spec drafted"],
+                evidence: ["PRD requests a spec"],
+                modelScenario: "docs",
+                modelRationale: "Docs-only low-risk node",
+            },
+            {
+                id: "review-spec",
+                objective: "Review spec",
+                after: ["write-spec"],
+                consumes: ["spec drafted"],
+                produces: ["spec reviewed"],
+                evidence: [{ id: "review-evidence", source: "design.md#review", quote: "Review after draft" }],
+                modelScenario: "review",
+            },
+        ],
+    };
+    const trace = buildGoalDagPlanningTrace(spec);
+    assert.equal(trace.version, 1);
+    assert.equal(trace.evidence.length, 2);
+    assert.deepEqual(trace.transitions[1], {
+        nodeId: "review-spec",
+        consumes: ["spec drafted"],
+        produces: ["spec reviewed"],
+        evidence: ["review-evidence"],
+    });
+    assert.match(trace.dependencyReview[1]?.whyNotParallel ?? "", /Depends on write-spec/);
+    assert.equal(trace.modelAssignments[0]?.model, "openai-codex/gpt-5.3-codex-spark");
+    assert.equal(trace.modelAssignments[1]?.model, "deepseek/deepseek-v4-pro");
+    assert.deepEqual(trace.openQuestions, ["Confirm final validator command"]);
+    assert.doesNotThrow(() => JSON.parse(serializeGoalDagPlanningTrace(trace)));
+});
+test("parseGoalDagSpecDocument rejects invalid planning metadata", () => {
+    assert.throws(() => parseGoalDagSpecDocument({
+        objective: "x",
+        nodes: [{ id: "a", objective: "a", consumes: [""] }],
+    }), /nodes\[0\]\.consumes\[0\] must be a non-empty string/);
+    assert.throws(() => parseGoalDagSpecDocument({
+        objective: "x",
+        nodes: [{ id: "a", objective: "a", evidence: [42] }],
+    }), /nodes\[0\]\.evidence\[0\] must be a string or object/);
+});
+test("buildGoalDagFromSpecFile writes a planning trace when requested", () => {
+    const dir = mkdtempSync(join(tmpdir(), "goal-dag-"));
+    try {
+        const specPath = join(dir, "spec.json");
+        const outPath = join(dir, "out.dag.json");
+        const tracePath = join(dir, "out.trace.json");
+        writeFileSync(specPath, JSON.stringify({
+            objective: "x",
+            nodes: [
+                {
+                    id: "a",
+                    objective: "a",
+                    produces: ["a done"],
+                    evidence: ["source says a"],
+                },
+            ],
+        }), "utf8");
+        buildGoalDagFromSpecFile(specPath, outPath, { tracePath });
+        const trace = JSON.parse(readFileSync(tracePath, "utf8"));
+        assert.equal(trace.transitions[0].nodeId, "a");
+        assert.equal(trace.evidence[0].quote, "source says a");
+    }
+    finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
 test("build-dag CLI accepts the build-dag subcommand", () => {
     // Spawn the compiled CLI the way a shell or Pi would invoke it, and
     // confirm the subcommand is consumed before flag parsing runs.
-    const dir = mkdtempSync(join(tmpdir(), "agent-goal-planner-"));
+    const dir = mkdtempSync(join(tmpdir(), "goal-dag-"));
     try {
         const specPath = join(dir, "spec.json");
         const outPath = join(dir, "out.dag.json");
@@ -293,6 +400,25 @@ test("build-dag CLI accepts the build-dag subcommand", () => {
         const result = spawnSync(process.execPath, [CLI_PATH, "build-dag", "--spec", specPath, "--out", outPath], { encoding: "utf8" });
         assert.equal(result.status, 0, `cli failed: ${result.stderr}`);
         assert.match(result.stdout, /Wrote Goal DAG file/);
+    }
+    finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+test("build-dag CLI writes planning trace with --trace", () => {
+    const dir = mkdtempSync(join(tmpdir(), "goal-dag-"));
+    try {
+        const specPath = join(dir, "spec.json");
+        const outPath = join(dir, "out.dag.json");
+        const tracePath = join(dir, "out.trace.json");
+        writeFileSync(specPath, JSON.stringify({
+            objective: "x",
+            nodes: [{ id: "a", objective: "a", produces: ["a done"] }],
+        }), "utf8");
+        const result = spawnSync(process.execPath, [CLI_PATH, "build-dag", "--spec", specPath, "--out", outPath, "--trace", tracePath], { encoding: "utf8" });
+        assert.equal(result.status, 0, `cli failed: ${result.stderr}`);
+        assert.match(result.stdout, /Wrote planning trace/);
+        assert.equal(JSON.parse(readFileSync(tracePath, "utf8")).transitions[0].nodeId, "a");
     }
     finally {
         rmSync(dir, { recursive: true, force: true });

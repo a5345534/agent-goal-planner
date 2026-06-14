@@ -1,4 +1,4 @@
-# agent-goal-planner
+# goal-dag
 
 Plan [Goal DAG](https://github.com/a5345534/agent-goal-runtime) files from
 development documents for the [`agent-goal-runtime`](https://github.com/a5345534/agent-goal-runtime).
@@ -6,11 +6,11 @@ development documents for the [`agent-goal-runtime`](https://github.com/a5345534
 The runtime accepts a strict JSON DAG file via `/goal --dag <path>`. Writing
 that JSON by hand is error-prone (kebab-case ids, acyclic dependencies,
 model-scenario referential integrity, etc.). This package adds a thin
-**planner layer** on top of the runtime:
+**Goal DAG producer layer** on top of the runtime:
 
 - A programmatic `GoalDagSpec` builder API.
-- A small CLI: `agent-goal-planner build-dag --spec <in> --out <out>`.
-- A Pi skill (`/skill:goal-planner`) that teaches an agent to extract a
+- A small CLI: `goal-dag build-dag --spec <in> --out <out> [--trace <trace>]`.
+- A Pi skill (`/skill:goal-dag`) that teaches an agent to extract a
   spec from a PRD, design doc, or OpenSpec change, assign models from
   a catalog, and emit a valid DAG file.
 
@@ -22,25 +22,39 @@ This package only does two things:
    `agent-goal-runtime`'s `parseGoalDagFileDocument()` — the runtime
    parser is the single source of truth for id pattern, dependency
    existence, self-dependency, cycle, and model-scenario referential
-   integrity. The planner refuses to write an invalid DAG.
+   integrity. The builder refuses to write an invalid DAG.
+
+For reviewability, `GoalDagSpec` may also carry spec-only planning metadata
+(`consumes`, `produces`, `evidence`, `modelRationale`, `openQuestions`). The
+builder strips those fields from the runtime DAG and can write a separate
+planning trace sidecar JSON.
 
 ## Install
 
-Install via Pi (matches the runtime package's pattern):
+Install once via Pi (matches the runtime package's pattern):
 
 ```bash
-pi install git:github.com/a5345534/agent-goal-planner
+pi install git:github.com/a5345534/goal-dag
 ```
 
-The runtime dependency is pinned via the planner's own `package.json`
-to `github:a5345534/agent-goal-runtime#v0.1.5`, so a single install
+For an existing installation, update `goal-dag` with `pi update` instead of
+reinstalling:
+
+```bash
+pi update git:github.com/a5345534/goal-dag
+# or update all Pi packages:
+pi update
+```
+
+The runtime dependency is pinned via `goal-dag`'s own `package.json`
+to `github:a5345534/agent-goal-runtime#v0.1.5`, so a single install or update
 brings in the whole stack.
 
 For a local-development checkout:
 
 ```bash
-git clone https://github.com/a5345534/agent-goal-planner
-cd agent-goal-planner
+git clone https://github.com/a5345534/goal-dag
+cd goal-dag
 npm install      # devDeps only
 npm run build
 ```
@@ -50,22 +64,22 @@ Then add the local path to `~/.pi/agent/settings.json` (or project
 
 ```json
 {
-  "packages": ["/absolute/path/to/agent-goal-planner"]
+  "packages": ["/absolute/path/to/goal-dag"]
 }
 ```
 
 ## CLI
 
 ```bash
-# 1. Write a spec.json (the agent fills this in via the /skill:goal-planner workflow)
-# 2. Build a validated DAG file:
-npx agent-goal-planner build-dag --spec spec.json --out goal.dag.json
+# 1. Write a spec.json (the agent fills this in via the /skill:goal-dag workflow)
+# 2. Build a validated DAG file plus optional planning trace:
+npx goal-dag build-dag --spec spec.json --out goal.dag.json --trace goal.trace.json
 # 3. Hand it to the runtime:
 /goal --dag goal.dag.json
 ```
 
 The CLI is a thin wrapper over `buildGoalDagFromSpecFile()` from
-`agent-goal-planner`'s public API.
+`goal-dag`'s public API.
 
 ## Programmatic API
 
@@ -73,10 +87,12 @@ The CLI is a thin wrapper over `buildGoalDagFromSpecFile()` from
 import {
   parseGoalDagSpec,
   buildGoalDagFromSpec,
+  buildGoalDagPlanningTrace,
   serializeGoalDagDocument,
+  serializeGoalDagPlanningTrace,
   validateGoalDagJson,
   type GoalDagSpec,
-} from "agent-goal-planner";
+} from "goal-dag";
 
 const spec: GoalDagSpec = {
   objective: "Ship the People Frappe backend slices",
@@ -92,12 +108,19 @@ const spec: GoalDagSpec = {
       id: "integration-validation",
       objective: "Run integrated validation",
       after: ["attendance-parity", "payroll-doctypes"],
+      consumes: ["attendance fixtures complete", "payroll doctypes complete"],
+      produces: ["integrated validation complete"],
+      evidence: [{ source: "prd.md#validation", quote: "Run validation after both slices land" }],
+      modelScenario: "review",
+      modelRationale: "Fan-in validation benefits from review-oriented reasoning",
     },
   ],
 };
 
 const document = buildGoalDagFromSpec(spec);          // throws on invalid spec
-const json = serializeGoalDagDocument(document);      // pretty JSON
+const trace = buildGoalDagPlanningTrace(spec, document); // review sidecar data
+const json = serializeGoalDagDocument(document);      // pretty runtime DAG JSON
+const traceJson = serializeGoalDagPlanningTrace(trace); // pretty trace JSON
 const reparsed = validateGoalDagJson(json);           // smoke check
 ```
 
@@ -105,13 +128,16 @@ For native-git nodes, the builder emits `workspace.worktreeSlug = node.id` when
 omitted. Expected `outputs` are emitted relative to that node workspace root; do
 not put `.worktrees/<slug>/...` in artifact paths.
 
+Spec-only planning fields are accepted for trace generation but are never emitted
+in the runtime DAG JSON. Use them to explain dependencies and model choices.
+
 ## Pi skill
 
-The skill lives at `skills/goal-planner/SKILL.md` and ships in the npm
+The skill lives at `skills/goal-dag/SKILL.md` and ships in the npm
 tarball. Once installed, the agent can run:
 
 ```text
-/skill:goal-planner .goal/people-frappe-prd.md
+/skill:goal-dag .goal/people-frappe-prd.md
 ```
 
 The skill walks the agent through:
@@ -119,35 +145,38 @@ The skill walks the agent through:
 1. Reading the document.
 2. Reading the active model catalog (`.goal/model-catalog.json` when present,
    otherwise `catalogs/pi-available-models.json`).
-3. Asking clarifying questions about dependencies, conflicts, validators, and
-   model assignment.
-4. Producing a model assignment table and writing `modelRouting` + per-node
+3. Running a planning-quality pass: evidence table → abstract transition graph
+   → dependency/critical-path review, with a skeptical judge pass for high-risk
+   or ambiguous plans.
+4. Asking clarifying questions about dependencies, conflicts, validators,
+   redundant shortcut nodes, and model assignment.
+5. Producing a model assignment table and writing `modelRouting` + per-node
    `modelScenario` into the `GoalDagSpec`.
-5. Writing the `GoalDagSpec` JSON.
-6. Running the CLI to build a parser-valid DAG file.
-7. Showing the user the resulting DAG and offering
+6. Writing the `GoalDagSpec` JSON with spec-only planning metadata for traceability.
+7. Running the CLI to build a parser-valid DAG file and trace sidecar.
+8. Showing the user the resulting DAG, planning trace, and offering
    `/goal --dag <out.dag.json>`.
 
 ## Model catalog
 
-The package ships a default Pi model catalog at
-[`catalogs/pi-available-models.json`](catalogs/pi-available-models.json),
-generated from `pi --list-models` plus `~/.pi/agent/models.json`. It lists the
-available Pi model ids, context/output limits, reasoning/image support, and
-planner guidance (`recommendedFor`, `avoidFor`, `costTier`, `speedTier`, notes).
+The package ships a default Pi model-routing catalog at
+[`catalogs/pi-available-models.json`](catalogs/pi-available-models.json). It
+contains ordered `modelRouting.rules` that map task traits (task type, risk,
+privacy, and estimated context) to a recommended `modelScenario` and Pi model id.
 
 Project-specific overrides should live at `.goal/model-catalog.json`. The skill
 prefers that file when it exists. The catalog's role is to inform LLM judgment;
-the LLM still chooses the final per-node `modelScenario` assignments and must
-show a model assignment table before writing the DAG.
+the LLM still chooses the final per-node `modelScenario` assignments, declares
+runtime-compatible `modelRouting.scenarios`, and shows a model assignment table
+before writing the DAG.
 
 Schema: [`schemas/model-catalog.schema.json`](schemas/model-catalog.schema.json).
 
 ## Architecture
 
 See [`docs/architecture-decision.md`](docs/architecture-decision.md) for
-the rationale behind splitting this planner out of `agent-goal-runtime`
-and the runtime API surface the planner depends on.
+the rationale behind splitting this Goal DAG producer out of `agent-goal-runtime`
+and the runtime API surface `goal-dag` depends on.
 
 ```
 ┌────────────────────────────────────────┐
@@ -159,19 +188,20 @@ and the runtime API surface the planner depends on.
                   │ uses
                   │
 ┌────────────────────────────────────────┐
-│  agent-goal-planner (this package)     │
+│  goal-dag (this package)               │
 │  - parseGoalDagSpec (loose spec JSON)  │
 │  - buildGoalDagFromSpec (delegates)    │
+│  - buildGoalDagPlanningTrace (sidecar) │
 │  - CLI: build-dag                      │
-│  - Pi skill: goal-planner              │
+│  - Pi skill: goal-dag                  │
 └────────────────────────────────────────┘
 ```
 
-The runtime owns the schema and validation. The planner owns the
-"how do I extract a plan from a document" prompt / script / agentic
-workflow. New planners (Linear tickets, Jira epics, OpenSpec changes)
-can ship as additional skills or scripts under this package without
-touching the runtime.
+The runtime owns the schema and validation. `goal-dag` owns the
+"how do I extract a DAG from a document" prompt / script / agentic
+workflow and the optional planning trace sidecar. New document-to-DAG workflows
+(Linear tickets, Jira epics, OpenSpec changes) can ship as additional skills or
+scripts under this package without touching the runtime.
 
 ## Development
 
@@ -210,8 +240,8 @@ The package depends on `agent-goal-runtime` via a git ref:
 "agent-goal-runtime": "github:a5345534/agent-goal-runtime#v0.1.1"
 ```
 
-Pin to a tag (or a commit) so planner releases are reproducible. The
-runtime API surface the planner depends on:
+Pin to a tag (or a commit) so `goal-dag` releases are reproducible. The
+runtime API surface `goal-dag` depends on:
 
 - `parseGoalDagFileDocument` (parser + validator)
 - `GoalDagFileDocument`, `GoalDagFileNode`, `GoalDagFileDefaults`,

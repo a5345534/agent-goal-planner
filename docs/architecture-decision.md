@@ -1,7 +1,7 @@
-# Architecture decision: why `agent-goal-planner` is a separate repository
+# Architecture decision: why `goal-dag` is a separate repository
 
 > Status: accepted 2026-06-04
-> Applies to: `a5345534/agent-goal-planner` and the `agent-goal-runtime` API surface it depends on
+> Applies to: `a5345534/goal-dag` and the `agent-goal-runtime` API surface it depends on
 
 ## Context
 
@@ -16,20 +16,20 @@ should not have to learn the schema just to get started.
 
 We considered two designs for closing that gap:
 
-1. **A planner built into `agent-goal-runtime`.** The runtime would
-   expose a `buildGoalDagDocumentFromSpec()` API; user / agent code
+1. **A Goal DAG producer built into `agent-goal-runtime`.** The runtime
+   would expose a `buildGoalDagDocumentFromSpec()` API; user / agent code
    could compose a `GoalDagSpec` and hand it to the runtime to produce
    a validated DAG file.
-2. **A planner as a separate package.** The runtime would stay a
-   consumer of DAG files (parser, validator, scheduler). The planner
-   would own the producer side: parsing a spec, composing a draft
+2. **A Goal DAG producer as a separate package.** The runtime would stay a
+   consumer of DAG files (parser, validator, scheduler). The producer
+   package would own the write side: parsing a spec, composing a draft
    document, round-tripping it through the runtime's parser for
    validation, and writing the file.
 
 ## Decision
 
-We chose (2). The planner lives in a separate repository
-(`a5345534/agent-goal-planner`), depends on
+We chose (2). `goal-dag` lives in a separate repository
+(`a5345534/goal-dag`), depends on
 `agent-goal-runtime@^0.1.1`, and owns the producer side end-to-end.
 The runtime owns the consumer side and exposes only:
 
@@ -40,32 +40,36 @@ The runtime owns the consumer side and exposes only:
   / `GoalDagConflictHints` / `GoalDagNode` / `GoalModelRoutingConfig`
   types.
 
-A small Pi skill (`/skill:goal-planner`) ships in the planner
+A small Pi skill (`/skill:goal-dag`) ships in the `goal-dag`
 package; it teaches an agent to read a development document, extract
-a `GoalDagSpec`, and call the planner's CLI to produce a DAG file
-ready for `/goal --dag <path>`.
+a `GoalDagSpec`, and call the `goal-dag` CLI to produce a DAG file
+ready for `/goal --dag <path>` plus an optional planning trace sidecar for
+review.
 
 ## Consequences
 
 ### Runtime stays lean
 
 - The runtime's API surface remains "I can read this DAG file." It
-  does not know about specs, planners, or document formats.
+  does not know about specs, producer packages, or document formats.
 - `node:fs` is no longer pulled into the core module path
   (an earlier draft had a `writeGoalDagFileFromSpec` in the runtime;
   moving the producer side out removed that dep).
-- Spec shape evolution belongs to the planner layer, not the
-  runtime. A new planner (Linear → DAG, Jira → DAG, OpenSpec change
-  → DAG) can ship without touching the runtime.
+- Spec shape evolution belongs to the producer layer, not the
+  runtime. A new document-to-DAG workflow (Linear → DAG, Jira → DAG,
+  OpenSpec change → DAG) can ship without touching the runtime.
 
 ### The parser remains the single source of truth
 
-- The planner's `buildGoalDagFromSpec()` composes a draft
+- `goal-dag`'s `buildGoalDagFromSpec()` composes a draft
   `GoalDagFileDocument` from the spec and round-trips it through
   `parseGoalDagFileDocument`. All structural / graph /
   referential-integrity rules live in one place.
+- Spec-only planning metadata (`consumes`, `produces`, `evidence`,
+  `modelRationale`, `openQuestions`) is stripped before runtime validation and
+  may be emitted separately by `buildGoalDagPlanningTrace()`.
 - The cycle detection added in `agent-goal-runtime@0.1.1` is the
-  same check the planner surfaces to the user before the file is
+  same check `goal-dag` surfaces to the user before the file is
   written.
 
 ### The dependency surface is small and explicit
@@ -78,9 +82,9 @@ ready for `/goal --dag <path>`.
 }
 ```
 
-Pinned to a tag, not a range, so planner releases are reproducible
+Pinned to a tag, not a range, so `goal-dag` releases are reproducible
 and the runtime's release cadence does not silently pull breaking
-changes into the planner.
+changes into `goal-dag`.
 
 ### The skill is prompt + reference heavy, code-light
 
@@ -90,9 +94,9 @@ changes into the planner.
   based on task objective, scope, risk, validators, context size, and
   required modalities. This is intentionally LLM judgment, not a hard-coded
   heuristic.
-- The CLI (`agent-goal-planner build-dag --spec ... --out ...`) is a
-  thin shell over the spec parser and the runtime round-trip
-  (mechanical work, deterministic code).
+- The CLI (`goal-dag build-dag --spec ... --out ... [--trace ...]`) is a
+  thin shell over the spec parser, the runtime round-trip, and optional trace
+  sidecar generation (mechanical work, deterministic code).
 - The `references/` directory has DAG format, model-routing, and
   model-catalog examples for the agent to load on demand.
 
@@ -101,16 +105,15 @@ of a stable API boundary.
 
 ### Model assignment is LLM-driven through a catalog
 
-The planner package ships `catalogs/pi-available-models.json`, generated from
-`pi --list-models` and Pi's custom `~/.pi/agent/models.json`. The catalog lists
-only models available in the current Pi installation plus human/planner guidance
-such as `recommendedFor`, `avoidFor`, cost/speed tiers, context size, image
-support, and notes.
+The `goal-dag` package ships `catalogs/pi-available-models.json`. The catalog
+contains ordered model-routing rules that map agent/LLM-facing task traits
+(task type, risk, privacy, and estimated context) to recommended Pi model ids.
 
-The deterministic part validates the catalog shape and ensures scenario template
-preferred models reference actual catalog models. The creative part remains with
-the LLM: the skill must show a model assignment table and then write explicit
-per-node `modelScenario` values into the `GoalDagSpec`.
+The deterministic part validates the catalog shape. The creative part remains
+with the LLM: the skill must show a model assignment table, translate chosen
+catalog scenarios into runtime-compatible `modelRouting.scenarios`, and then
+write explicit per-node `modelScenario` values plus `modelRationale` into the
+`GoalDagSpec`.
 
 Project-specific catalogs can override the package default through
 `.goal/model-catalog.json`.
@@ -137,9 +140,9 @@ change. The `prepack` hook still rebuilds on `npm pack` /
 ┌──────────────────────────────────────────────────────────────────┐
 │                                                                  │
 │   ┌────────────┐    spec      ┌─────────────────┐    file      │
-│   │  LLM /     │  extraction  │  agent-goal-    │   written    │
-│   │  agent     ├─────────────►│  planner CLI    ├──────────────►│
-│   │  (skill)   │              │  (build-dag)    │              │
+│   │  LLM /     │  extraction  │  goal-dag CLI   │ DAG + trace  │
+│   │  agent     ├─────────────►│  build-dag      ├──────────────►│
+│   │  (skill)   │              │  --trace        │              │
 │   └────────────┘              └────────┬────────┘              │
 │        ▲                              │                        │
 │        │ reads                        │ round-trips            │
@@ -167,14 +170,14 @@ change. The `prepack` hook still rebuilds on `npm pack` /
 
 ## Reversibility
 
-If a future planner needs the runtime to ship its own builder helper
+If a future producer workflow needs the runtime to ship its own builder helper
 (for example, to give the Pi adapter a one-call "spec → orchestrable
 DAG" path that bypasses the file system), the right move is to:
 
 1. Promote `buildGoalDagDocumentFromSpec` to a stable runtime export
    behind a `GoalDagSpec` type that the runtime also owns.
-2. Bump the runtime's major version and the planner's dep range.
-3. Have the planner's CLI keep its current behavior as a thin
+2. Bump the runtime's major version and `goal-dag`'s dep range.
+3. Have the `goal-dag` CLI keep its current behavior as a thin
    wrapper, so existing skill workflows do not change.
 
 The decision recorded here is therefore not a one-way door, but the

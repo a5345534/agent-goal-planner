@@ -6,7 +6,7 @@ lives at:
 - Schema: <https://github.com/a5345534/agent-goal-runtime/blob/main/schemas/goal-dag.schema.json>
 - User-facing format doc: <https://github.com/a5345534/agent-goal-runtime/blob/main/docs/goal-dag-format.md>
 
-## Root fields
+## Runtime DAG root fields
 
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
@@ -16,7 +16,7 @@ lives at:
 | `modelRouting` | no | object | Scenario-to-model routing table used by Pi for the controller session and DAG node subagents. |
 | `nodes` | yes | non-empty array (≤ 20) | Explicit DAG nodes. |
 
-## Node fields
+## Runtime DAG node fields
 
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
@@ -28,12 +28,12 @@ lives at:
 | `conflicts` | no | object | File / module / capability conflict hints for scheduler serialization. |
 | `scope` | no | string | Human-readable scope label. |
 | `workspaceStrategy` | no | string | Workspace allocation strategy. Defaults to native Git worktree in Pi. |
-| `workspace` | no | object | Deterministic node worktree binding: `worktreeSlug`, optional `branch`, optional `baseRef`. For native-git nodes, the planner emits `worktreeSlug: <node id>` when omitted. |
+| `workspace` | no | object | Deterministic node worktree binding: `worktreeSlug`, optional `branch`, optional `baseRef`. For native-git nodes, `goal-dag` emits `worktreeSlug: <node id>` when omitted. |
 | `risk` | no | `low` / `medium` / `high` | Risk label for scheduling / model-routing / review policy. |
 | `completionGates` | no | string array | Completion gates. Defaults to `controller-validation`. |
 | `modelScenario` | no | scenario id | Explicit model-routing scenario for this node. |
 
-## Validation rules the planner must respect
+## Validation rules `goal-dag` must respect
 
 - `version` must be `1`.
 - `objective` is non-empty.
@@ -45,10 +45,31 @@ lives at:
   `modelRouting` is declared) — or `modelRouting` must declare the scenario.
 - `outputs` are workspace-root-relative artifact paths. Put deterministic worktree/branch binding in `workspace`; do not put `.worktrees/<slug>/...` in outputs.
 
-`agent-goal-planner build-dag` rejects any spec that violates these rules.
+`goal-dag build-dag` rejects any spec that violates these rules.
 The error message tells you which field; fix the spec and retry.
 
-## Minimal example
+## Spec-only planning metadata
+
+`GoalDagSpec` may include these producer-side fields. They are used to build the
+planning trace sidecar and are stripped before runtime DAG validation:
+
+| Field | Location | Type | Meaning |
+| --- | --- | --- | --- |
+| `openQuestions` | root | string array | Unresolved questions preserved in the trace sidecar. |
+| `consumes` | node | string array | States/artifacts the node requires before it can run. |
+| `produces` | node | string array | States/artifacts the node creates for downstream nodes. |
+| `evidence` | node | string or object array | Source quotes/references supporting the node or edge rationale. |
+| `modelRationale` | node | string | Human-readable reason for the chosen `modelScenario`. |
+
+Use `--trace <path>` to write the sidecar:
+
+```bash
+goal-dag build-dag --spec spec.json --out goal.dag.json --trace goal.trace.json
+```
+
+The runtime DAG JSON will not contain these fields.
+
+## GoalDagSpec example with trace metadata
 
 ```json
 {
@@ -65,7 +86,15 @@ The error message tells you which field; fix the spec and retry.
     {
       "id": "integration-validation",
       "objective": "Run integrated validation",
-      "after": ["attendance-parity", "payroll-doctypes"]
+      "after": ["attendance-parity", "payroll-doctypes"],
+      "consumes": ["attendance fixtures complete", "payroll doctypes complete"],
+      "produces": ["integrated validation complete"],
+      "evidence": [
+        {
+          "source": "prd.md#validation",
+          "quote": "Run integrated validation after both backend slices land."
+        }
+      ]
     }
   ]
 }

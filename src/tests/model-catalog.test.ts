@@ -8,144 +8,95 @@ import { parseModelCatalogContent, parseModelCatalogDocument } from "../index.js
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CATALOG_PATH = resolve(HERE, "..", "..", "catalogs", "pi-available-models.json");
 
-test("default Pi model catalog parses and contains all pi --list-models entries", () => {
+test("default Pi model routing catalog parses", () => {
   const catalog = parseModelCatalogContent(readFileSync(CATALOG_PATH, "utf8"));
-  assert.equal(catalog.version, 1);
-  assert.equal(catalog.name, "pi-available-models");
-  assert.equal(catalog.selectionPolicy.mode, "llm-assigned");
-  assert.equal(catalog.models.length, 17);
+  assert.equal(catalog.modelRouting.defaultSubagentScenario, "spark-implementation");
+  assert.equal(catalog.modelRouting.rules.length, 10);
 
-  const ids = new Set(catalog.models.map((model) => model.id));
+  const scenarios = new Set(catalog.modelRouting.rules.map((rule) => rule.modelScenario));
+  assert.deepEqual(
+    [...scenarios].sort(),
+    [
+      "critical-decision",
+      "final-authority",
+      "implementation",
+      "local-private",
+      "long-context-docs",
+      "long-context-reasoning",
+      "long-context-scan",
+      "review",
+      "spark-docs",
+      "spark-implementation",
+    ],
+  );
+});
+
+test("default Pi model routing catalog contains expected model ids", () => {
+  const catalog = parseModelCatalogContent(readFileSync(CATALOG_PATH, "utf8"));
+  const models = new Set(catalog.modelRouting.rules.map((rule) => rule.model));
   for (const id of [
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v4-pro",
     "local-aeon/aeon",
-    "minimax/MiniMax-M2",
-    "minimax/MiniMax-M2.1",
-    "minimax/MiniMax-M2.1-highspeed",
-    "minimax/MiniMax-M2.5",
-    "minimax/MiniMax-M2.5-highspeed",
-    "minimax/MiniMax-M2.7",
-    "minimax/MiniMax-M2.7-highspeed",
-    "minimax/MiniMax-M3",
-    "openai-codex/gpt-5.2",
-    "openai-codex/gpt-5.3-codex",
     "openai-codex/gpt-5.3-codex-spark",
-    "openai-codex/gpt-5.4",
-    "openai-codex/gpt-5.4-mini",
     "openai-codex/gpt-5.5",
   ]) {
-    assert.ok(ids.has(id), `missing ${id}`);
+    assert.ok(models.has(id), `missing ${id}`);
   }
 });
 
-test("default Pi model catalog scenario templates reference existing models", () => {
-  const catalog = parseModelCatalogContent(readFileSync(CATALOG_PATH, "utf8"));
-  const ids = new Set(catalog.models.map((model) => model.id));
-  for (const [scenario, template] of Object.entries(catalog.scenarioTemplates)) {
-    for (const preferred of template.preferredModels) {
-      assert.ok(ids.has(preferred), `${scenario} references missing model ${preferred}`);
-    }
-  }
-});
-
-test("model catalog parser rejects duplicate model ids", () => {
+test("model routing catalog parser rejects an unknown default scenario", () => {
   assert.throws(
     () =>
       parseModelCatalogDocument({
-        version: 1,
-        name: "x",
-        capturedAt: "now",
-        source: { command: "pi --list-models", notes: "x" },
-        selectionPolicy: {
-          mode: "llm-assigned",
-          instruction: "x",
-          mustUseAvailableModelsOnly: true,
-          fallbackBehavior: "x",
+        modelRouting: {
+          defaultSubagentScenario: "missing",
+          rules: [
+            {
+              when: { taskType: ["docs"] },
+              modelScenario: "docs",
+              model: "p/m",
+            },
+          ],
         },
-        scenarioTemplates: {
-          docs: {
-            description: "docs",
-            preferredModels: ["p/m"],
-            selectionHints: [],
-          },
-        },
-        models: [
-          {
-            id: "p/m",
-            provider: "p",
-            model: "m",
-            contextWindowTokens: 1,
-            maxOutputTokens: 1,
-            reasoning: true,
-            images: false,
-            relativeStrength: "x",
-            costTier: "x",
-            speedTier: "x",
-            recommendedFor: [],
-            avoidFor: [],
-            notes: "x",
-          },
-          {
-            id: "p/m",
-            provider: "p",
-            model: "m",
-            contextWindowTokens: 1,
-            maxOutputTokens: 1,
-            reasoning: true,
-            images: false,
-            relativeStrength: "x",
-            costTier: "x",
-            speedTier: "x",
-            recommendedFor: [],
-            avoidFor: [],
-            notes: "x",
-          },
-        ],
       }),
-    /duplicate model id p\/m/,
+    /defaultSubagentScenario must reference a modelScenario used by at least one rule/,
   );
 });
 
-test("model catalog parser rejects scenario templates referencing missing models", () => {
+test("model routing catalog parser rejects empty when blocks", () => {
   assert.throws(
     () =>
       parseModelCatalogDocument({
-        version: 1,
-        name: "x",
-        capturedAt: "now",
-        source: { command: "pi --list-models", notes: "x" },
-        selectionPolicy: {
-          mode: "llm-assigned",
-          instruction: "x",
-          mustUseAvailableModelsOnly: true,
-          fallbackBehavior: "x",
+        modelRouting: {
+          rules: [
+            {
+              when: {},
+              modelScenario: "docs",
+              model: "p/m",
+            },
+          ],
         },
-        scenarioTemplates: {
-          docs: {
-            description: "docs",
-            preferredModels: ["missing/model"],
-            selectionHints: [],
-          },
-        },
-        models: [
-          {
-            id: "p/m",
-            provider: "p",
-            model: "m",
-            contextWindowTokens: 1,
-            maxOutputTokens: 1,
-            reasoning: true,
-            images: false,
-            relativeStrength: "x",
-            costTier: "x",
-            speedTier: "x",
-            recommendedFor: [],
-            avoidFor: [],
-            notes: "x",
-          },
-        ],
       }),
-    /preferredModels references missing model missing\/model/,
+    /modelRouting\.rules\[0\]\.when must not be empty/,
+  );
+});
+
+test("model routing catalog parser rejects unsupported rule fields", () => {
+  assert.throws(
+    () =>
+      parseModelCatalogDocument({
+        modelRouting: {
+          rules: [
+            {
+              when: { taskType: ["docs"] },
+              modelScenario: "docs",
+              model: "p/m",
+              extra: true,
+            },
+          ],
+        },
+      }),
+    /modelRouting\.rules\[0\]\.extra is not supported/,
   );
 });
