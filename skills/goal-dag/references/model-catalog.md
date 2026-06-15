@@ -61,7 +61,15 @@ Rules:
 2. Evaluate rules in order and prefer the first clear match.
 3. Prefer explicit per-node `modelScenario` over broad fuzzy runtime rules.
 4. Declare every chosen scenario under the final DAG's `modelRouting.scenarios`.
-5. Set `modelRouting.controllerScenario` to a dedicated `controller` scenario unless the user explicitly chooses runtime fallback.
+5. Set `modelRouting.controllerScenario` to `controller` and choose the controller model by evaluating the DAG's overall risk:
+
+   | DAG risk | controller model | when to use |
+   | --- | --- | --- |
+   | critical | `openai-codex/gpt-5.5` | Security-sensitive, production-migration, protected-branch, or multi-repo DAGs |
+   | high | `openai-codex/gpt-5.5` | Cross-module refactors, broad audit, or high-risk implementation DAGs |
+   | medium | `deepseek/deepseek-v4-pro` | Medium-risk implementation, integration, or review DAGs |
+   | low | `deepseek/deepseek-v4-pro` | Docs, specs, lint-only, or narrow-scope low-risk DAGs |
+
 6. Write the table's reason into each node's spec-only `modelRationale` so it appears in the planning trace.
 7. Set `modelRouting.defaultSubagentScenario` when a safe default is clear.
 8. Warn the user if a node would otherwise fall back to the current Pi session model.

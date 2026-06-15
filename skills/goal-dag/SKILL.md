@@ -103,7 +103,8 @@ DAG file and round-trips it through `agent-goal-runtime`'s parser for validation
 
 5. **Assign models with LLM judgment using the catalog.** Produce and show a
    table before writing the final spec. Include a `controller` row for the DAG
-   controller and one row per DAG node:
+   controller and one row per DAG node. For the controller, evaluate the DAG's
+   overall risk (highest per-node risk):
 
    | target | risk/scope summary | chosen scenario | model | reason |
    | --- | --- | --- | --- | --- |

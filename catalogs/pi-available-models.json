@@ -5,10 +5,35 @@
     "rules": [
       {
         "when": {
-          "role": "controller"
+          "role": "controller",
+          "risk": "critical"
         },
         "modelScenario": "controller",
         "model": "openai-codex/gpt-5.5"
+      },
+      {
+        "when": {
+          "role": "controller",
+          "risk": "high"
+        },
+        "modelScenario": "controller",
+        "model": "openai-codex/gpt-5.5"
+      },
+      {
+        "when": {
+          "role": "controller",
+          "risk": "medium"
+        },
+        "modelScenario": "controller",
+        "model": "deepseek/deepseek-v4-pro"
+      },
+      {
+        "when": {
+          "role": "controller",
+          "risk": "low"
+        },
+        "modelScenario": "controller",
+        "model": "deepseek/deepseek-v4-pro"
       },
       {
         "when": {
