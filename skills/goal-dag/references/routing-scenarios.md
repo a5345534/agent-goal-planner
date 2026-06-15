@@ -10,11 +10,12 @@ just needs a cheap model), declare `modelRouting` in the spec.
 {
   "modelRouting": {
     "scenarios": {
-      "implementation": { "model": "openai-codex/gpt-5.5" },
-      "docs":           { "model": "openai/gpt-5-mini" },
-      "review":         { "model": "anthropic/claude-opus" }
+      "controller":     { "model": "openai-codex/gpt-5.5" },
+      "implementation": { "model": "deepseek/deepseek-v4-pro" },
+      "docs":           { "model": "openai-codex/gpt-5.3-codex-spark" },
+      "review":         { "model": "deepseek/deepseek-v4-pro" }
     },
-    "controllerScenario": "implementation",
+    "controllerScenario": "controller",
     "defaultSubagentScenario": "implementation",
     "rules": [
       { "scenario": "docs",   "when": { "scopes": ["docs"],   "risks": ["low"] } },
@@ -51,8 +52,8 @@ Rule `when` supports:
 - More than three nodes with distinct work shapes (impl / docs / review /
   archive) — declare scenarios so each node can pick the right model.
 - Some nodes touch high-risk areas and deserve a stronger reviewer model.
-- The user has pinned a specific model for the controller and wants
-  subagents to use a different default.
+- The controller should use a dedicated orchestration model while subagents use
+  a different default.
 
 ## When **not** to use one
 

@@ -102,17 +102,18 @@ DAG file and round-trips it through `agent-goal-runtime`'s parser for validation
    is still unclear.
 
 5. **Assign models with LLM judgment using the catalog.** Produce and show a
-   table before writing the final spec:
+   table before writing the final spec. Include a `controller` row for the DAG
+   controller and one row per DAG node:
 
-   | node | risk/scope summary | chosen scenario | model | reason |
+   | target | risk/scope summary | chosen scenario | model | reason |
    | --- | --- | --- | --- | --- |
 
-   Then write `modelRouting.scenarios`, explicit per-node `modelScenario`
-   values, and per-node `modelRationale` into the spec. Prefer explicit
-   per-node assignments over fuzzy rules; use runtime `modelRouting.rules` only
-   when a rule is simpler and less ambiguous. If all nodes would otherwise fall
-   back to the current Pi session model, warn the user and ask whether that is
-   intended.
+   Then write `modelRouting.scenarios`, a dedicated `modelRouting.controllerScenario`,
+   explicit per-node `modelScenario` values, and per-node `modelRationale` into
+   the spec. Prefer explicit per-node assignments over fuzzy rules; use runtime
+   `modelRouting.rules` only when a rule is simpler and less ambiguous. If the
+   controller or nodes would otherwise fall back to the current Pi session model,
+   warn the user and ask whether that is intended.
 
 6. **Ask clarifying questions** when the document is ambiguous:
    - Are nodes A and B parallel, or does B depend on A?

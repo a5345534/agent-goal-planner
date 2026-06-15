@@ -18,8 +18,14 @@ Pi model id:
 ```json
 {
   "modelRouting": {
+    "controllerScenario": "controller",
     "defaultSubagentScenario": "spark-implementation",
     "rules": [
+      {
+        "when": { "role": "controller" },
+        "modelScenario": "controller",
+        "model": "openai-codex/gpt-5.5"
+      },
       {
         "when": {
           "taskType": ["isolated-patch", "small-bugfix"],
@@ -43,9 +49,10 @@ runtime-compatible `modelRouting.scenarios`.
 ## Required agent behavior
 
 Before writing the final `GoalDagSpec`, read the active model catalog and produce
-a model assignment table:
+a model assignment table. Include a `controller` row for the DAG controller and
+one row per DAG node:
 
-| node | risk/scope summary | chosen scenario | model | reason |
+| target | risk/scope summary | chosen scenario | model | reason |
 | --- | --- | --- | --- | --- |
 
 Rules:
@@ -54,12 +61,13 @@ Rules:
 2. Evaluate rules in order and prefer the first clear match.
 3. Prefer explicit per-node `modelScenario` over broad fuzzy runtime rules.
 4. Declare every chosen scenario under the final DAG's `modelRouting.scenarios`.
-5. Write the table's reason into each node's spec-only `modelRationale` so it appears in the planning trace.
-6. Set `modelRouting.defaultSubagentScenario` when a safe default is clear.
-7. Warn the user if a node would otherwise fall back to the current Pi session model.
-8. For long-context scans, prefer the catalog's long-context scan/reasoning scenarios.
-9. For critical or final-authority decisions, prefer the strongest catalog scenario.
-10. For local/private work, only choose local models when risk is acceptable or user requests it.
+5. Set `modelRouting.controllerScenario` to a dedicated `controller` scenario unless the user explicitly chooses runtime fallback.
+6. Write the table's reason into each node's spec-only `modelRationale` so it appears in the planning trace.
+7. Set `modelRouting.defaultSubagentScenario` when a safe default is clear.
+8. Warn the user if a node would otherwise fall back to the current Pi session model.
+9. For long-context scans, prefer the catalog's long-context scan/reasoning scenarios.
+10. For critical or final-authority decisions, prefer the strongest catalog scenario.
+11. For local/private work, only choose local models when risk is acceptable or user requests it.
 
 ## Example final runtime `modelRouting` block
 
@@ -70,6 +78,10 @@ the `GoalDagSpec`:
 {
   "modelRouting": {
     "scenarios": {
+      "controller": {
+        "model": "openai-codex/gpt-5.5",
+        "description": "Dedicated DAG controller orchestration and risk decisions"
+      },
       "spark-implementation": {
         "model": "openai-codex/gpt-5.3-codex-spark",
         "description": "Fast low/medium-risk implementation under 128K context"
@@ -79,6 +91,7 @@ the `GoalDagSpec`:
         "description": "Medium/high-risk review and audit"
       }
     },
+    "controllerScenario": "controller",
     "defaultSubagentScenario": "spark-implementation"
   },
   "nodes": [

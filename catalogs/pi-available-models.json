@@ -1,11 +1,28 @@
 {
   "modelRouting": {
+    "controllerScenario": "controller",
     "defaultSubagentScenario": "spark-implementation",
     "rules": [
       {
         "when": {
-          "taskType": ["isolated-patch", "small-bugfix", "lint-fix", "type-fix", "unit-test-fix"],
-          "risk": ["low", "medium"],
+          "role": "controller"
+        },
+        "modelScenario": "controller",
+        "model": "openai-codex/gpt-5.5"
+      },
+      {
+        "when": {
+          "taskType": [
+            "isolated-patch",
+            "small-bugfix",
+            "lint-fix",
+            "type-fix",
+            "unit-test-fix"
+          ],
+          "risk": [
+            "low",
+            "medium"
+          ],
           "contextTokensEstimated": "<=128000"
         },
         "modelScenario": "spark-implementation",
@@ -13,7 +30,13 @@
       },
       {
         "when": {
-          "taskType": ["repo-scan", "triage", "module-map", "dependency-discovery", "context-collection"]
+          "taskType": [
+            "repo-scan",
+            "triage",
+            "module-map",
+            "dependency-discovery",
+            "context-collection"
+          ]
         },
         "modelScenario": "long-context-scan",
         "model": "deepseek/deepseek-v4-flash"
@@ -21,14 +44,24 @@
       {
         "when": {
           "contextTokensEstimated": ">128000",
-          "taskType": ["coding", "debugging", "analysis", "review"]
+          "taskType": [
+            "coding",
+            "debugging",
+            "analysis",
+            "review"
+          ]
         },
         "modelScenario": "long-context-reasoning",
         "model": "deepseek/deepseek-v4-pro"
       },
       {
         "when": {
-          "taskType": ["cross-module-debugging", "medium-risk-refactor", "integration-fix", "test-suite-fix"],
+          "taskType": [
+            "cross-module-debugging",
+            "medium-risk-refactor",
+            "integration-fix",
+            "test-suite-fix"
+          ],
           "risk": "medium"
         },
         "modelScenario": "implementation",
@@ -36,8 +69,16 @@
       },
       {
         "when": {
-          "taskType": ["review", "audit", "spec-validation", "regression-risk-check"],
-          "risk": ["medium", "high"]
+          "taskType": [
+            "review",
+            "audit",
+            "spec-validation",
+            "regression-risk-check"
+          ],
+          "risk": [
+            "medium",
+            "high"
+          ]
         },
         "modelScenario": "review",
         "model": "deepseek/deepseek-v4-pro"
@@ -51,7 +92,12 @@
       },
       {
         "when": {
-          "taskType": ["architecture-decision", "final-merge-review", "production-migration-plan", "security-sensitive-change"]
+          "taskType": [
+            "architecture-decision",
+            "final-merge-review",
+            "production-migration-plan",
+            "security-sensitive-change"
+          ]
         },
         "modelScenario": "final-authority",
         "model": "openai-codex/gpt-5.5"
@@ -66,7 +112,11 @@
       },
       {
         "when": {
-          "taskType": ["docs", "spec", "markdown"],
+          "taskType": [
+            "docs",
+            "spec",
+            "markdown"
+          ],
           "risk": "low",
           "contextTokensEstimated": "<=128000"
         },
@@ -75,7 +125,11 @@
       },
       {
         "when": {
-          "taskType": ["docs", "spec", "markdown"],
+          "taskType": [
+            "docs",
+            "spec",
+            "markdown"
+          ],
           "contextTokensEstimated": ">128000"
         },
         "modelScenario": "long-context-docs",

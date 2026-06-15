@@ -10,13 +10,15 @@ const CATALOG_PATH = resolve(HERE, "..", "..", "catalogs", "pi-available-models.
 
 test("default Pi model routing catalog parses", () => {
   const catalog = parseModelCatalogContent(readFileSync(CATALOG_PATH, "utf8"));
+  assert.equal(catalog.modelRouting.controllerScenario, "controller");
   assert.equal(catalog.modelRouting.defaultSubagentScenario, "spark-implementation");
-  assert.equal(catalog.modelRouting.rules.length, 10);
+  assert.equal(catalog.modelRouting.rules.length, 11);
 
   const scenarios = new Set(catalog.modelRouting.rules.map((rule) => rule.modelScenario));
   assert.deepEqual(
     [...scenarios].sort(),
     [
+      "controller",
       "critical-decision",
       "final-authority",
       "implementation",

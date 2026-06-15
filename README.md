@@ -150,8 +150,9 @@ The skill walks the agent through:
    or ambiguous plans.
 4. Asking clarifying questions about dependencies, conflicts, validators,
    redundant shortcut nodes, and model assignment.
-5. Producing a model assignment table and writing `modelRouting` + per-node
-   `modelScenario` into the `GoalDagSpec`.
+5. Producing a model assignment table and writing `modelRouting.scenarios`, a
+   dedicated `controllerScenario`, and per-node `modelScenario` into the
+   `GoalDagSpec`.
 6. Writing the `GoalDagSpec` JSON with spec-only planning metadata for traceability.
 7. Running the CLI to build a parser-valid DAG file and trace sidecar.
 8. Showing the user the resulting DAG, planning trace, and offering
@@ -166,9 +167,9 @@ privacy, and estimated context) to a recommended `modelScenario` and Pi model id
 
 Project-specific overrides should live at `.goal/model-catalog.json`. The skill
 prefers that file when it exists. The catalog's role is to inform LLM judgment;
-the LLM still chooses the final per-node `modelScenario` assignments, declares
-runtime-compatible `modelRouting.scenarios`, and shows a model assignment table
-before writing the DAG.
+the LLM still chooses the final controller and per-node `modelScenario`
+assignments, declares runtime-compatible `modelRouting.scenarios`, sets a
+`controllerScenario`, and shows a model assignment table before writing the DAG.
 
 Schema: [`schemas/model-catalog.schema.json`](schemas/model-catalog.schema.json).
 
